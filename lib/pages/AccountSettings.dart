@@ -137,49 +137,27 @@ class _AccountSettingsState extends State<AccountSettings> {
       }
     }
 
-    // Initialize defaults
-    _isGoogleUser = user != null &&
-        user.providerData.any((info) => info.providerId == 'google.com');
-
     if (user != null) {
-      final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+      final docRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid);
       final docSnapshot = await docRef.get();
 
-      // Set Google user data immediately
-      if (_isGoogleUser) {
-        if (mounted) {
-          setState(() {
-            _fullName = user.displayName ?? user.email!.split('@')[0];
-            _profilePictureUrl = user.photoURL;
-            _profileInitials = _getInitials(_fullName);
-            _isNameVerified = true;
-            _nameController.text = _fullName;
-          });
-        }
-        await prefs.setString('fullName', _fullName);
-        await prefs.setString('profileInitials', _profileInitials);
-        await prefs.setBool('isNameVerified', true);
-        await _saveGoogleUserToFirestore(user);
-      }
-
-      // Load Firestore data or initialize
       if (docSnapshot.exists) {
         final data = docSnapshot.data()!;
         if (mounted) {
           setState(() {
-            _isNameVerified = data['isNameVerified'] as bool? ?? _isGoogleUser;
+            _isNameVerified = data['isNameVerified'] as bool? ?? false;
             _isRoleSelected = data['isRoleSelected'] as bool? ?? false;
             _isIdVerified = data['isIdVerified'] as bool? ?? false;
             _isFirstTimeUser = data['isFirstTimeUser'] as bool? ?? true;
-            // Only override _fullName if not a Google user
-            if (!_isGoogleUser) {
-              _fullName = data['fullName'] as String? ?? '';
-              _nameController.text = _fullName;
-            }
+            _fullName = data['fullName'] as String? ?? user.displayName ?? '';
             _profileInitials = _getInitials(_fullName);
-            _selectedRole = ['Student', 'Teacher'].contains(data['role'])
-                ? data['role'] as String
-                : 'Student';
+            _nameController.text = _fullName; // Set TextField value
+            _selectedRole =
+                ['Student', 'Teacher'].contains(data['role'])
+                    ? data['role'] as String
+                    : 'Student';
             if (_selectedRole == 'Student') {
               _idController.text = data['idNumber'] as String? ?? '';
             } else {
@@ -188,29 +166,45 @@ class _AccountSettingsState extends State<AccountSettings> {
           });
         }
       } else {
-        // Initialize Firestore document
+        // Initialize default Firestore document
         await docRef.set({
           'email': user.email,
-          'fullName': _isGoogleUser ? _fullName : '',
+          'fullName': user.displayName ?? '',
           'role': 'Student',
           'createdAt': FieldValue.serverTimestamp(),
-          'isNameVerified': _isGoogleUser,
+          'isNameVerified': false,
           'isRoleSelected': false,
           'isIdVerified': false,
           'isFirstTimeUser': true,
         }, SetOptions(merge: true));
       }
 
-      // Non-Google user fallback
-      if (!_isGoogleUser) {
-        _fullName = docSnapshot.exists
-            ? (docSnapshot.data()!['fullName'] as String? ?? '')
-            : prefs.getString('fullName') ?? '';
+      _isGoogleUser = user.providerData.any(
+        (info) => info.providerId == 'google.com',
+      );
+
+      if (_isGoogleUser) {
+        _fullName = user.displayName ?? user.email!.split('@')[0];
+        _profilePictureUrl = user.photoURL;
         _profileInitials = _getInitials(_fullName);
-        _isNameVerified = docSnapshot.exists
-            ? (docSnapshot.data()!['isNameVerified'] as bool? ?? false)
-            : prefs.getBool('isNameVerified') ?? false;
+        _isNameVerified = true;
         _nameController.text = _fullName;
+        await prefs.setString('fullName', _fullName);
+        await prefs.setString('profileInitials', _profileInitials);
+        await prefs.setBool('isNameVerified', true);
+        await _saveGoogleUserToFirestore(user);
+      } else {
+        // Ensure email/password users load from Firestore or SharedPreferences
+        _fullName =
+            docSnapshot.exists
+                ? (docSnapshot.data()!['fullName'] as String? ?? '')
+                : prefs.getString('fullName') ?? '';
+        _profileInitials = _getInitials(_fullName);
+        _isNameVerified =
+            docSnapshot.exists
+                ? (docSnapshot.data()!['isNameVerified'] as bool? ?? false)
+                : prefs.getBool('isNameVerified') ?? false;
+        _nameController.text = _fullName; // Set TextField value
         _checkNameEditability();
       }
     }
@@ -278,43 +272,44 @@ class _AccountSettingsState extends State<AccountSettings> {
 
   Future<void> _showSuccessAndRedirect() async {
     final overlayEntry = OverlayEntry(
-      builder: (context) => Material(
-        color: Colors.black.withOpacity(0.5),
-        child: Center(
-          child: Container(
-            width: 200,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 10,
-                  spreadRadius: 2,
+      builder:
+          (context) => Material(
+            color: Colors.black.withOpacity(0.5),
+            child: Center(
+              child: Container(
+                width: 200,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 10,
+                      spreadRadius: 2,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const _AnimatedSpinnerSmall(),
-                const SizedBox(height: 16),
-                const Text(
-                  'Please wait while we are setting up your account...',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.black87,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const _AnimatedSpinnerSmall(),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Plase wait while we are setting up your account...',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.black87,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
     );
 
     Overlay.of(context, rootOverlay: true).insert(overlayEntry);
@@ -362,10 +357,12 @@ class _AccountSettingsState extends State<AccountSettings> {
     final dataToUpdate = {
       'fullName': _fullName,
       'role': _selectedRole,
-      'idNumber': _selectedRole == 'Student'
-          ? _idController.text.trim()
-          : _teacherIdController.text.trim(),
-      'profileImage': _isGoogleUser ? _profilePictureUrl ?? '' : downloadUrl ?? '',
+      'idNumber':
+          _selectedRole == 'Student'
+              ? _idController.text.trim()
+              : _teacherIdController.text.trim(),
+      'profileImage':
+          _isGoogleUser ? _profilePictureUrl ?? '' : downloadUrl ?? '',
       'isNameVerified': _isNameVerified,
       'isRoleSelected': _isRoleSelected,
       'isIdVerified': _isIdVerified,
@@ -487,7 +484,9 @@ class _AccountSettingsState extends State<AccountSettings> {
               ),
               title: Text(
                 'Import from Gallery',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 14),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontSize: 14),
               ),
               onTap: () {
                 Navigator.pop(context);
@@ -502,7 +501,9 @@ class _AccountSettingsState extends State<AccountSettings> {
               ),
               title: Text(
                 'Take a Picture',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 14),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontSize: 14),
               ),
               onTap: () {
                 Navigator.pop(context);
@@ -517,7 +518,9 @@ class _AccountSettingsState extends State<AccountSettings> {
               ),
               title: Text(
                 'Remove Profile Photo',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 14),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontSize: 14),
               ),
               onTap: () {
                 Navigator.pop(context);
@@ -544,62 +547,64 @@ class _AccountSettingsState extends State<AccountSettings> {
   Future<void> _removeProfileImage() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          'Remove Profile Photo',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to remove your profile photo?',
-              style: Theme.of(context).textTheme.bodyMedium,
+      builder:
+          (context) => AlertDialog(
+            title: Text(
+              'Remove Profile Photo',
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-            const SizedBox(height: 10),
-            Text(
-              '⚠ You can only upload a new profile photo after 7 days.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Are you sure you want to remove your profile photo?',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '⚠ You can only upload a new profile photo after 7 days.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.error,
                     fontSize: 13,
                   ),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            child: Text(
-              'Cancel',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface,
+            actions: [
+              TextButton(
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                onPressed: () => Navigator.pop(context, false),
               ),
-            ),
-            onPressed: () => Navigator.pop(context, false),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
-            ),
-            child: Text(
-              'Remove',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onError,
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                  foregroundColor: Theme.of(context).colorScheme.onError,
+                ),
+                child: Text(
+                  'Remove',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onError,
+                  ),
+                ),
+                onPressed: () => Navigator.pop(context, true),
               ),
-            ),
-            onPressed: () => Navigator.pop(context, true),
+            ],
           ),
-        ],
-      ),
     );
 
     if (confirm == true) {
       try {
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
-          final imageRef =
-              FirebaseStorage.instance.ref().child('profile_images/${user.uid}.jpg');
+          final imageRef = FirebaseStorage.instance.ref().child(
+            'profile_images/${user.uid}.jpg',
+          );
           await imageRef.delete();
         }
       } catch (_) {}
@@ -636,7 +641,8 @@ class _AccountSettingsState extends State<AccountSettings> {
     if (_lastNameChangeTimestamp != null) {
       final currentTime = DateTime.now().millisecondsSinceEpoch;
       const threeDaysInMillis = 3 * 24 * 60 * 60 * 1000;
-      _isNameEditable = currentTime - _lastNameChangeTimestamp! > threeDaysInMillis;
+      _isNameEditable =
+          currentTime - _lastNameChangeTimestamp! > threeDaysInMillis;
     } else {
       _isNameEditable = true;
     }
@@ -648,7 +654,8 @@ class _AccountSettingsState extends State<AccountSettings> {
     if (nameParts.length == 1) {
       return nameParts[0].isNotEmpty ? nameParts[0][0].toUpperCase() : 'U';
     }
-    final firstInitial = nameParts[0].isNotEmpty ? nameParts[0][0].toUpperCase() : '';
+    final firstInitial =
+        nameParts[0].isNotEmpty ? nameParts[0][0].toUpperCase() : '';
     final lastInitial =
         nameParts.last.isNotEmpty ? nameParts.last[0].toUpperCase() : '';
     return '$firstInitial$lastInitial';
@@ -661,7 +668,7 @@ class _AccountSettingsState extends State<AccountSettings> {
     if (!docSnapshot.exists) {
       await docRef.set({
         'email': user.email,
-        'fullName': user.displayName ?? user.email!.split('@')[0],
+        'fullName': user.displayName ?? '',
         'role': '',
         'createdAt': FieldValue.serverTimestamp(),
         'isNameVerified': true,
@@ -723,7 +730,8 @@ class _AccountSettingsState extends State<AccountSettings> {
                     _fullName = newName;
                     _profileInitials = _getInitials(_fullName);
                     _isNameEditable = false;
-                    _lastNameChangeTimestamp = DateTime.now().millisecondsSinceEpoch;
+                    _lastNameChangeTimestamp =
+                        DateTime.now().millisecondsSinceEpoch;
                     _isNameVerified = true;
                   });
 
@@ -744,10 +752,10 @@ class _AccountSettingsState extends State<AccountSettings> {
                       .collection('users')
                       .doc(user.uid)
                       .set({
-                    'fullName': _fullName,
-                    'isNameVerified': _isNameVerified,
-                    'profileInitials': _profileInitials,
-                  }, SetOptions(merge: true));
+                        'fullName': _fullName,
+                        'isNameVerified': _isNameVerified,
+                        'profileInitials': _profileInitials,
+                      }, SetOptions(merge: true));
 
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -916,21 +924,23 @@ class _AccountSettingsState extends State<AccountSettings> {
           backgroundColor: Theme.of(context).colorScheme.primary,
           foregroundColor: Colors.white,
           leading: Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: (_isNameVerified &&
-                      _isRoleSelected &&
-                      _isIdVerified &&
-                      !_isFirstTimeUser)
-                  ? () => Scaffold.of(context).openDrawer()
-                  : () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(_getMenuAccessErrorMessage()),
-                        ),
-                      );
-                    },
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu),
+                  onPressed:
+                      (_isNameVerified &&
+                              _isRoleSelected &&
+                              _isIdVerified &&
+                              !_isFirstTimeUser)
+                          ? () => Scaffold.of(context).openDrawer()
+                          : () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(_getMenuAccessErrorMessage()),
+                              ),
+                            );
+                          },
+                ),
           ),
           title: const Text('Account Settings'),
         ),
@@ -950,23 +960,25 @@ class _AccountSettingsState extends State<AccountSettings> {
                     CircleAvatar(
                       radius: 45,
                       backgroundColor: Colors.blue,
-                      backgroundImage: _isGoogleUser
-                          ? (_profilePictureUrl != null
-                              ? NetworkImage(_profilePictureUrl!)
-                              : null)
-                          : (_customProfileImage != null
-                              ? FileImage(_customProfileImage!)
-                              : null),
-                      child: (!_isGoogleUser && _customProfileImage == null)
-                          ? Text(
-                              _profileInitials,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 30,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            )
-                          : null,
+                      backgroundImage:
+                          _isGoogleUser
+                              ? (_profilePictureUrl != null
+                                  ? NetworkImage(_profilePictureUrl!)
+                                  : null)
+                              : (_customProfileImage != null
+                                  ? FileImage(_customProfileImage!)
+                                  : null),
+                      child:
+                          (!_isGoogleUser && _customProfileImage == null)
+                              ? Text(
+                                _profileInitials,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 30,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                              : null,
                     ),
                     if (!_isGoogleUser)
                       Positioned(
@@ -1011,8 +1023,12 @@ class _AccountSettingsState extends State<AccountSettings> {
               TextField(
                 controller: _nameController,
                 style: const TextStyle(fontSize: 15),
-                enabled: !_isGoogleUser && _isNameEditable && !_isNameVerified,
-                readOnly: _isGoogleUser || _isNameVerified,
+                enabled:
+                    !_isGoogleUser &&
+                    _isNameEditable &&
+                    !_isNameVerified, // Disable if verified
+                readOnly:
+                    _isGoogleUser || _isNameVerified, // Read-only if verified
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
                   hintText: 'Enter your full name',
@@ -1020,13 +1036,14 @@ class _AccountSettingsState extends State<AccountSettings> {
                     vertical: 8,
                     horizontal: 12,
                   ),
-                  suffixIcon: (!_isGoogleUser && !_isNameVerified)
-                      ? IconButton(
-                          icon: const Icon(Icons.check, size: 20),
-                          onPressed: _isNameEditable ? _saveName : null,
-                          tooltip: 'Save Name',
-                        )
-                      : null,
+                  suffixIcon:
+                      (!_isGoogleUser && !_isNameVerified)
+                          ? IconButton(
+                            icon: const Icon(Icons.check, size: 20),
+                            onPressed: _isNameEditable ? _saveName : null,
+                            tooltip: 'Save Name',
+                          )
+                          : null,
                 ),
               ),
               if (_isGoogleUser)
@@ -1075,7 +1092,8 @@ class _AccountSettingsState extends State<AccountSettings> {
                     const Icon(Icons.lock, size: 20),
                     const SizedBox(width: 8),
                     TextButton(
-                      onPressed: () => Navigator.pushNamed(context, '/changepassword'),
+                      onPressed:
+                          () => Navigator.pushNamed(context, '/changepassword'),
                       child: const Text(
                         'Change Password',
                         style: TextStyle(fontSize: 14),
@@ -1267,107 +1285,115 @@ class _AccountSettingsState extends State<AccountSettings> {
     }
 
     String tempSelectedRole =
-        _selectedRole.isNotEmpty && ['Student', 'Teacher'].contains(_selectedRole)
+        _selectedRole.isNotEmpty &&
+                ['Student', 'Teacher'].contains(_selectedRole)
             ? _selectedRole
             : 'Student';
 
+    print('Initial tempSelectedRole: $tempSelectedRole');
+
     const List<String> roles = ['Student', 'Teacher'];
+    print('Roles list: $roles');
 
     showDialog(
       context: context,
       builder: (context) {
-        return StatefulBuilder
-        builder: (context, setDialogState) {
-          if (roles.isEmpty) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            if (roles.isEmpty) {
+              print('Error: Roles list is empty');
+              return AlertDialog(
+                title: const Text('Error'),
+                content: const Text('No roles available. Please try again.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK'),
+                  ),
+                ],
+              );
+            }
+
             return AlertDialog(
-              title: const Text('Error'),
-              content: const Text('No roles available. Please try again.'),
+              title: const Text('Select Your Role'),
+              content: DropdownButton<String>(
+                value: tempSelectedRole,
+                isExpanded: true,
+                items:
+                    roles.map((role) {
+                      return DropdownMenuItem<String>(
+                        value: role,
+                        child: Text(role),
+                      );
+                    }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() {
+                      tempSelectedRole = value;
+                      print('Selected role: $tempSelectedRole');
+                    });
+                  }
+                },
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (context) {
+                        return AlertDialog(
+                          title: const Text('Confirm Role Selection'),
+                          content: Text(
+                            'Are you sure you want to select "$tempSelectedRole" as your role?\n\nYou cannot change it after ID verification.',
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Confirm'),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+
+                    if (confirm == true) {
+                      setState(() {
+                        _selectedRole = tempSelectedRole;
+                        _isRoleSelected = true;
+                        _isIdVerified = false;
+                        _idController.clear();
+                        _teacherIdController.clear();
+                      });
+                      await _savePreferences();
+                      await _updateUserFirestoreData();
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Role selected: $_selectedRole'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Continue'),
                 ),
               ],
             );
-          }
-
-          return AlertDialog(
-            title: const Text('Select Your Role'),
-            content: DropdownButton<String>(
-              value: tempSelectedRole,
-              isExpanded: true,
-              items: roles.map((role) {
-                return DropdownMenuItem<String>(
-                  value: role,
-                  child: Text(role),
-                );
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  setDialogState(() {
-                    tempSelectedRole = value;
-                  });
-                }
-              },
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (context) {
-                      return AlertDialog(
-                        title: const Text('Confirm Role Selection'),
-                        content: Text(
-                          'Are you sure you want to select "$tempSelectedRole" as your role?\n\nYou cannot change it after ID verification.',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
-                          ),
-                          ElevatedButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('Confirm'),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-
-                  if (confirm == true) {
-                    setState(() {
-                      _selectedRole = tempSelectedRole;
-                      _isRoleSelected = true;
-                      _isIdVerified = false;
-                      _idController.clear();
-                      _teacherIdController.clear();
-                    });
-                    await _savePreferences();
-                    await _updateUserFirestoreData();
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Role selected: $_selectedRole'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  }
-                },
-                child: const Text('Continue'),
-              ),
-            ],
-          );
-        },
-      );
-    }
+          },
+        );
+      },
+    );
   }
 
   ListTile _drawerItem(
@@ -1384,9 +1410,9 @@ class _AccountSettingsState extends State<AccountSettings> {
             _isRoleSelected &&
             _isIdVerified &&
             !_isFirstTimeUser)) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_getMenuAccessErrorMessage())),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(_getMenuAccessErrorMessage())));
         } else {
           if (!_verificationSnackShown) {
             final prefs = await SharedPreferences.getInstance();
