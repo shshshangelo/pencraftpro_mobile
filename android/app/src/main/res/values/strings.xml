@@ -1,0 +1,5 @@
+<resources>
+  <string name="app_name">PenCraft Pro</string>
+  <string name="note_reminder">Note Reminders</string>
+  <string name="note_reminder_description">Notifications for note reminders</string>
+</resources>

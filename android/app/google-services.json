@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1004041621428",
+    "project_id": "pencraftpro-2025-6ea5c",
+    "storage_bucket": "pencraftpro-2025-6ea5c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1004041621428:android:d7c92e89f23e98c5832ce1",
+        "android_client_info": {
+          "package_name": "com.app.pencraftpro"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1004041621428-vro3pgsd57lc4jpin1se8mnlgvf76j4p.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.app.pencraftpro",
+            "certificate_hash": "266d739f8619753b46d899b0f864ef1bce94fa28"
+          }
+        },
+        {
+          "client_id": "1004041621428-ar8hasviojs9lem27gaj9jdd8fbo5t15.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCaong3MYTkdrX0fteF5cLi03idoXKPC0Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1004041621428-ar8hasviojs9lem27gaj9jdd8fbo5t15.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
