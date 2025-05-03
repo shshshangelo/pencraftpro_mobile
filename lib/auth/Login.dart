@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'SignUp.dart';
@@ -47,6 +48,7 @@ class _LoginState extends State<Login> {
 
   Future<void> _loadSavedEmail() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isFirstTimeUser', true);
     final savedEmail = prefs.getString('email') ?? '';
     final rememberMe = prefs.getBool('rememberMe') ?? false;
     setState(() {
@@ -138,6 +140,42 @@ class _LoginState extends State<Login> {
 
       if (user != null) {
         await user.reload();
+        final prefs = await SharedPreferences.getInstance();
+        final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
+
+        if (!isNewUser) {
+          final userDoc =
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(user.uid)
+                  .get();
+
+          if (userDoc.exists) {
+            final data = userDoc.data()!;
+            await prefs.setBool(
+              'isNameVerified',
+              data['isNameVerified'] ?? false,
+            );
+            await prefs.setBool(
+              'isRoleSelected',
+              data['isRoleSelected'] ?? false,
+            );
+            await prefs.setBool('isIdVerified', data['isIdVerified'] ?? false);
+            await prefs.setBool(
+              'isFirstTimeUser',
+              data['isFirstTimeUser'] ?? false,
+            );
+            await prefs.setString('fullName', data['fullName'] ?? '');
+            await prefs.setString('selectedRole', data['role'] ?? 'Student');
+            await prefs.setString('studentId', data['idNumber'] ?? '');
+            await prefs.setString('teacherId', data['idNumber'] ?? '');
+            await prefs.setString(
+              'profileInitials',
+              data['profileInitials'] ?? _getInitials(data['fullName'] ?? ''),
+            );
+          }
+        }
+
         if (user.emailVerified) {
           Navigator.pushNamedAndRemoveUntil(
             context,
@@ -170,6 +208,13 @@ class _LoginState extends State<Login> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(' ');
+    if (parts.isEmpty) return 'U';
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return '${parts[0][0].toUpperCase()}${parts.last[0].toUpperCase()}';
   }
 
   @override

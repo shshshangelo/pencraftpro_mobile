@@ -31,7 +31,8 @@ class _NotesByLabelScreenState extends State<NotesByLabelScreen> {
         widget.notes.where((note) {
           final labels =
               (note['labels'] as List?)?.map((e) => e.toString()) ?? [];
-          return labels.contains(widget.label);
+          final isDeleted = note['isDeleted'] == true;
+          return labels.contains(widget.label) && !isDeleted;
         }).toList();
   }
 
@@ -65,7 +66,6 @@ class _NotesByLabelScreenState extends State<NotesByLabelScreen> {
                   child: Text(
                     'No notes found for this label.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: 15,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),

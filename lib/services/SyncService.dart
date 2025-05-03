@@ -10,30 +10,38 @@ class SyncService {
   static bool _isSyncing = false;
   static OverlayEntry? _overlayEntry;
   static bool _hasSyncedThisSession = false;
+  static bool _hasStartedAutoSync = false;
 
-  static Future<void> syncNow(BuildContext context) async {
+  // Ensure Firestore offline persistence is enabled
+  static void initializeFirestore() {
+    _firestore.settings = const Settings(persistenceEnabled: true);
+    print('Firestore offline persistence enabled');
+  }
+
+  static Future<void> syncNow(
+    BuildContext context, {
+    VoidCallback? onComplete,
+  }) async {
     if (_isSyncing || _hasSyncedThisSession) return;
     _isSyncing = true;
 
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
-      if (connectivityResult == ConnectivityResult.none) {
-        print('⚡ Offline detected, skipping sync.');
-        _isSyncing = false;
-        return;
-      }
+      final isOffline = connectivityResult == ConnectivityResult.none;
+      print('Connectivity status: ${isOffline ? 'Offline' : 'Online'}');
 
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
+        print('No authenticated user, skipping sync');
         _isSyncing = false;
         return;
       }
 
       final prefs = await SharedPreferences.getInstance();
-      final bool isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
+      final isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
 
       if (isFirstTimeUser) {
-        print('🆕 First time user detected. Skipping sync.');
+        print('First-time user, skipping sync');
         _isSyncing = false;
         _hasSyncedThisSession = true;
         return;
@@ -48,63 +56,95 @@ class SyncService {
 
       final hasNotes = notesSnapshot.docs.isNotEmpty;
 
-      if (hasNotes) {
+      if (hasNotes && !isOffline) {
         _showLoadingSpinner(context);
       }
 
-      await _syncData(context);
+      await _syncData(context, isOffline: isOffline);
 
-      if (hasNotes) {
+      if (hasNotes && !isOffline) {
         _hideLoadingSpinner(context);
       }
 
       _hasSyncedThisSession = true;
-    } catch (e) {
+
+      if (onComplete != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          onComplete();
+        });
+      }
+    } catch (e, stackTrace) {
       print('Sync error: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+      print('Stack trace: $stackTrace');
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+      }
       _hideLoadingSpinner(context);
     } finally {
       _isSyncing = false;
     }
   }
 
-  // Start auto-sync for notes and user verification data
-  static Future<void> startAutoSync(BuildContext context) async {
-    Connectivity().onConnectivityChanged.listen((
-      List<ConnectivityResult> results,
-    ) async {
-      if (results.isNotEmpty &&
-          results.first != ConnectivityResult.none &&
-          !_isSyncing) {
+  static Future<void> startAutoSync(
+    BuildContext context, {
+    VoidCallback? onAutoSyncComplete,
+  }) async {
+    if (_hasStartedAutoSync) return;
+    _hasStartedAutoSync = true;
+
+    final overlayContext = context;
+
+    Connectivity().onConnectivityChanged.listen((results) async {
+      final isOffline =
+          results.isEmpty || results.first == ConnectivityResult.none;
+      if (!isOffline && !_isSyncing) {
         _isSyncing = true;
-        _showLoadingSpinner(context);
+        _showLoadingSpinner(overlayContext);
         try {
-          await _syncData(context);
-        } catch (e) {
-          print('Sync error: $e');
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+          await _syncData(overlayContext, isOffline: false);
+
+          if (onAutoSyncComplete != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              onAutoSyncComplete();
+            });
+          }
+        } catch (e, stackTrace) {
+          print('AutoSync error: $e');
+          print('Stack trace: $stackTrace');
+          if (overlayContext.mounted) {
+            ScaffoldMessenger.of(
+              overlayContext,
+            ).showSnackBar(SnackBar(content: Text('Auto-sync failed: $e')));
+          }
         }
-        _hideLoadingSpinner(context);
+        _hideLoadingSpinner(overlayContext);
         _isSyncing = false;
+      } else {
+        print(
+          'Auto-sync skipped: ${isOffline ? 'Offline' : 'Already syncing'}',
+        );
       }
     });
   }
 
-  // Sync both notes and verification data in both directions
-  static Future<void> _syncData(BuildContext context) async {
+  static Future<void> _syncData(
+    BuildContext context, {
+    required bool isOffline,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    await _syncLocalNotesToFirestore(user.uid);
-    await _syncFirestoreNotesToLocal(user.uid);
-    await _syncLocalVerificationToFirestore(user.uid);
+    if (!isOffline) {
+      await _syncLocalNotesToFirestore(user.uid);
+      await _syncFirestoreNotesToLocal(user.uid);
+      await _syncLocalVerificationToFirestore(user.uid);
+    } else {
+      print('Offline: Skipping Firestore sync, using local data');
+    }
   }
 
-  // Sync local notes to Firestore
   static Future<void> _syncLocalNotesToFirestore(String userId) async {
     final prefs = await SharedPreferences.getInstance();
     final String? notesString = prefs.getString('notes');
@@ -119,61 +159,89 @@ class SyncService {
           }, SetOptions(merge: true));
         }
       }
+      print(
+        'Synced ${notes.length} local notes to Firestore (queued if offline)',
+      );
     }
   }
 
-  // Sync notes from Firestore to local SharedPreferences
   static Future<void> _syncFirestoreNotesToLocal(String userId) async {
     final prefs = await SharedPreferences.getInstance();
+    try {
+      print('Starting sync for user: $userId');
 
-    // Fetch notes where user is the owner
-    final ownerNotesSnapshot =
-        await _firestore
-            .collection('notes')
-            .where('owner', isEqualTo: userId)
-            .get();
+      // Fetch notes where user is the owner
+      final ownerNotesSnapshot =
+          await _firestore
+              .collection('notes')
+              .where('owner', isEqualTo: userId)
+              .where('isDeleted', isEqualTo: false)
+              .get();
+      print(
+        'Fetched ${ownerNotesSnapshot.docs.length} owner notes (cached if offline)',
+      );
 
-    // Fetch notes where user is a collaborator
-    final collaboratorNotesSnapshot =
-        await _firestore
-            .collection('notes')
-            .where('collaborators', arrayContains: userId)
-            .get();
+      // Fetch notes where user is a collaborator
+      final collaboratorNotesSnapshot =
+          await _firestore
+              .collection('notes')
+              .where('collaborators', arrayContains: userId)
+              .where('isDeleted', isEqualTo: false)
+              .get();
+      print(
+        'Fetched ${collaboratorNotesSnapshot.docs.length} collaborator notes (cached if offline)',
+      );
 
-    // Merge results
-    final firestoreNotes =
-        [
-          ...ownerNotesSnapshot.docs,
-          ...collaboratorNotesSnapshot.docs,
-        ].map((doc) => {...doc.data(), 'id': doc.id}).toList();
+      // Merge results, removing duplicates
+      final firestoreNotes =
+          [...ownerNotesSnapshot.docs, ...collaboratorNotesSnapshot.docs]
+              .fold<Map<String, Map<String, dynamic>>>({}, (map, doc) {
+                map[doc.id] = {
+                  ...doc.data(),
+                  'id': doc.id,
+                };
+                return map;
+              })
+              .values
+              .toList();
 
-    // Merge with local notes
-    final String? localNotesString = prefs.getString('notes');
-    List<dynamic> localNotes =
-        localNotesString != null ? jsonDecode(localNotesString) : [];
+      print('Total unique notes fetched: ${firestoreNotes.length}');
+      print('Firestore notes: ${jsonEncode(firestoreNotes)}');
 
-    final Map<String, dynamic> mergedNotesMap = {};
-    for (var note in localNotes) {
-      if (note['id'] != null) {
+      // Merge with local notes
+      final String? localNotesString = prefs.getString('notes');
+      List<dynamic> localNotes =
+          localNotesString != null ? jsonDecode(localNotesString) : [];
+      print('Local notes before merge: ${jsonEncode(localNotes)}');
+
+      final Map<String, dynamic> mergedNotesMap = {};
+      for (var note in localNotes) {
+        if (note['id'] != null) {
+          mergedNotesMap[note['id']] = note;
+        }
+      }
+      for (var note in firestoreNotes) {
         mergedNotesMap[note['id']] = note;
       }
-    }
-    for (var note in firestoreNotes) {
-      mergedNotesMap[note['id']] = note;
-    }
 
-    final mergedNotes = mergedNotesMap.values.toList();
-    await prefs.setString('notes', jsonEncode(mergedNotes));
+      final mergedNotes = mergedNotesMap.values.toList();
+      print('Merged notes: ${jsonEncode(mergedNotes)}');
+
+      // Save to SharedPreferences
+      await prefs.setString('notes', jsonEncode(mergedNotes));
+      print('Saved ${mergedNotes.length} notes to SharedPreferences');
+    } catch (e, stackTrace) {
+      print('Error syncing notes to local: $e');
+      print('Stack trace: $stackTrace');
+    }
   }
 
-  // Sync local verification data to Firestore
   static Future<void> _syncLocalVerificationToFirestore(String userId) async {
     final prefs = await SharedPreferences.getInstance();
     final docRef = _firestore.collection('users').doc(userId);
     final docSnapshot = await docRef.get();
 
     if (docSnapshot.exists) {
-      // Firestore data takes precedence
       final data = docSnapshot.data()!;
       final verificationData = {
         'isNameVerified': data['isNameVerified'] ?? false,
@@ -187,7 +255,6 @@ class SyncService {
         'teacherId': data['idNumber'] ?? '',
       };
 
-      // Update SharedPreferences with Firestore data
       await prefs.setBool('isNameVerified', verificationData['isNameVerified']);
       await prefs.setBool('isRoleSelected', verificationData['isRoleSelected']);
       await prefs.setBool('isIdVerified', verificationData['isIdVerified']);
@@ -204,7 +271,6 @@ class SyncService {
         verificationData['profileInitials'],
       );
     } else {
-      // If no Firestore data, sync local SharedPreferences to Firestore
       final localData = {
         'isNameVerified': prefs.getBool('isNameVerified') ?? false,
         'isRoleSelected': prefs.getBool('isRoleSelected') ?? false,
@@ -218,18 +284,23 @@ class SyncService {
       };
 
       await docRef.set(localData, SetOptions(merge: true));
+      print(
+        'Queued verification data sync to Firestore (will sync when online)',
+      );
     }
   }
 
-  // Sync verification data and notes from Firestore to local on login
   static Future<void> syncVerificationOnLogin(String userId) async {
+    _hasSyncedThisSession = false; // Reset to allow sync
     final prefs = await SharedPreferences.getInstance();
     final docRef = _firestore.collection('users').doc(userId);
     final docSnapshot = await docRef.get();
 
     if (docSnapshot.exists) {
       final data = docSnapshot.data()!;
-      print('Syncing verification data from Firestore: $data');
+      print(
+        'Syncing verification data from Firestore (cached if offline): $data',
+      );
       await prefs.setBool('isNameVerified', data['isNameVerified'] ?? false);
       await prefs.setBool('isRoleSelected', data['isRoleSelected'] ?? false);
       await prefs.setBool('isIdVerified', data['isIdVerified'] ?? false);
@@ -244,17 +315,16 @@ class SyncService {
       );
     }
 
-    // Sync notes from Firestore to local on login
     await _syncFirestoreNotesToLocal(userId);
+    print('Completed syncVerificationOnLogin for user: $userId');
   }
 
-  // Clear local data on logout
   static Future<void> clearLocalDataOnLogout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
+    print('Cleared local data on logout');
   }
 
-  // Load notes from Firestore (used for manual refresh or UI updates)
   static Future<List<Map<String, dynamic>>> loadNotesFromFirestore(
     String userId,
   ) async {
@@ -262,14 +332,15 @@ class SyncService {
         await _firestore
             .collection('notes')
             .where('owner', isEqualTo: userId)
+            .where('isDeleted', isEqualTo: false)
             .get();
 
-    return querySnapshot.docs
-        .map((doc) => {...doc.data(), 'id': doc.id})
-        .toList();
+    final notes =
+        querySnapshot.docs.map((doc) => {...doc.data(), 'id': doc.id}).toList();
+    print('Loaded ${notes.length} notes from Firestore (cached if offline)');
+    return notes;
   }
 
-  // Show loading spinner
   static void _showLoadingSpinner(BuildContext context) {
     _overlayEntry = OverlayEntry(
       builder:
@@ -305,19 +376,16 @@ class SyncService {
 
     Overlay.of(context, rootOverlay: true).insert(_overlayEntry!);
 
-    // Auto-hide after 10 seconds to account for slower networks
     Future.delayed(const Duration(seconds: 10), () {
       _hideLoadingSpinner(context);
     });
   }
 
-  // Hide loading spinner
   static void _hideLoadingSpinner(BuildContext context) {
     _overlayEntry?.remove();
     _overlayEntry = null;
   }
 
-  // Helper to get initials
   static String _getInitials(String name) {
     final nameParts = name.trim().split(' ');
     if (nameParts.isEmpty) return 'U';
@@ -332,7 +400,6 @@ class SyncService {
   }
 }
 
-// Custom Animated Spinner Widget
 class _AnimatedSpinner extends StatefulWidget {
   @override
   __AnimatedSpinnerState createState() => __AnimatedSpinnerState();
@@ -403,7 +470,6 @@ class __AnimatedSpinnerState extends State<_AnimatedSpinner>
   }
 }
 
-// Animated Sync Text Widget
 class _AnimatedSyncText extends StatefulWidget {
   @override
   __AnimatedSyncTextState createState() => __AnimatedSyncTextState();

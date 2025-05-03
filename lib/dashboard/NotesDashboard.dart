@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import '../notes/AddNotePage.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class NotesDashboard extends StatefulWidget {
   const NotesDashboard({super.key});
@@ -33,8 +34,61 @@ class _NotesDashboardState extends State<NotesDashboard> {
   @override
   void initState() {
     super.initState();
-    _loadNotesFromPrefs(); // ✅ local cache lang muna
-    SyncService.startAutoSync(context); // ✅ auto-sync background only
+    _checkIfVerifiedAndStartSync();
+  }
+
+  Future<void> _checkIfVerifiedAndStartSync() async {
+    final prefs = await SharedPreferences.getInstance();
+    final connectivityResult = await Connectivity().checkConnectivity();
+    final isOffline = connectivityResult == ConnectivityResult.none;
+    print('Connectivity status: ${isOffline ? 'Offline' : 'Online'}');
+
+    // Always load from SharedPreferences first for offline support
+    await _loadNotesFromPrefs();
+
+    final isVerified =
+        prefs.getBool('isNameVerified') == true &&
+        prefs.getBool('isRoleSelected') == true &&
+        prefs.getBool('isIdVerified') == true;
+    final isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
+
+    if (isVerified && !isFirstTimeUser) {
+      if (!isOffline) {
+        // Load notes from Firestore when online
+        await _loadNotesFromFirestore();
+        print('Loaded notes from Firestore on login');
+
+        // Start auto-sync
+        SyncService.startAutoSync(
+          context,
+          onAutoSyncComplete: () async {
+            await _loadNotesFromPrefs();
+            print(
+              'Auto-sync completed, refreshed notes from SharedPreferences',
+            );
+          },
+        );
+
+        // Trigger immediate sync
+        await SyncService.syncNow(
+          context,
+          onComplete: () async {
+            await _loadNotesFromPrefs();
+            print(
+              'Manual sync completed, refreshed notes from SharedPreferences',
+            );
+          },
+        );
+
+        debugPrint('✅ Sync triggered and notes loaded.');
+      } else {
+        print('Offline: Using cached notes from SharedPreferences');
+        debugPrint('✅ Offline mode: Loaded cached notes.');
+      }
+    } else {
+      debugPrint('⏸️ Sync blocked: First-time user or not yet verified.');
+      print('Loading notes from SharedPreferences for first-time user');
+    }
   }
 
   Future<void> _loadNotesFromFirestore() async {
@@ -59,12 +113,20 @@ class _NotesDashboardState extends State<NotesDashboard> {
             return data;
           }).toList();
 
+      print(
+        'Fetched ${allNotes.length} notes from Firestore (cached if offline): ${jsonEncode(allNotes)}',
+      );
+
       setState(() {
         notes = allNotes;
       });
       await _saveNotesToPrefs();
-    } catch (e) {
-      debugPrint('Failed to load notes: $e');
+      print('Saved ${allNotes.length} notes to SharedPreferences');
+    } catch (e, stackTrace) {
+      print('Failed to load notes from Firestore: $e');
+      print('Stack trace: $stackTrace');
+      // Fallback to SharedPreferences if Firestore fails (e.g., offline with no cache)
+      await _loadNotesFromPrefs();
     }
   }
 
@@ -74,7 +136,11 @@ class _NotesDashboardState extends State<NotesDashboard> {
     final List<dynamic> jsonList = jsonDecode(jsonString);
 
     setState(() {
-      notes = jsonList.map((e) => Map<String, dynamic>.from(e)).toList();
+      notes =
+          jsonList
+              .map((e) => Map<String, dynamic>.from(e))
+              .where((note) => !_isNoteEmpty(note))
+              .toList();
       notes.sort((a, b) {
         final int idA = int.tryParse(a['id'] ?? '0') ?? 0;
         final int idB = int.tryParse(b['id'] ?? '0') ?? 0;
@@ -86,12 +152,16 @@ class _NotesDashboardState extends State<NotesDashboard> {
             .reduce((a, b) => a > b ? a : b);
         _nextId = maxId + 1;
       }
+      print(
+        'Loaded ${notes.length} notes from SharedPreferences: ${jsonEncode(notes)}',
+      );
     });
   }
 
   Future<void> _saveNotesToPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('notes', jsonEncode(notes));
+    print('Saved ${notes.length} notes to SharedPreferences');
   }
 
   @override
@@ -117,22 +187,30 @@ class _NotesDashboardState extends State<NotesDashboard> {
     List<String>? collaboratorEmails,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
     final noteId = id ?? DateTime.now().millisecondsSinceEpoch.toString();
     List<String> collaboratorUIDs = [];
 
     if (collaboratorEmails != null && collaboratorEmails.isNotEmpty) {
-      final userQuery =
-          await FirebaseFirestore.instance
-              .collection('users')
-              .where('email', whereIn: collaboratorEmails)
-              .get();
+      final connectivityResult = await Connectivity().checkConnectivity();
+      final isOffline = connectivityResult == ConnectivityResult.none;
 
-      collaboratorUIDs = userQuery.docs.map((doc) => doc.id).toList();
+      if (!isOffline) {
+        final userQuery =
+            await FirebaseFirestore.instance
+                .collection('users')
+                .where('email', whereIn: collaboratorEmails)
+                .get();
+        collaboratorUIDs = userQuery.docs.map((doc) => doc.id).toList();
+      } else {
+        print('Offline: Queuing collaborator emails for sync');
+      }
     }
 
     final noteData = {
       'id': noteId,
-      'owner': user?.uid,
+      'owner': user.uid,
       'title': title,
       'contentJson': contentJson,
       'isPinned': isPinned,
@@ -146,7 +224,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
       'folderId': folderId,
       'folderColor': folderColor,
       'collaboratorEmails': collaboratorEmails ?? [],
-      'collaborators': collaboratorUIDs, // ✅ important
+      'collaborators': collaboratorUIDs,
       'createdAt': DateTime.now().toIso8601String(),
       'updatedAt': DateTime.now().toIso8601String(),
     };
@@ -167,13 +245,19 @@ class _NotesDashboardState extends State<NotesDashboard> {
           .collection('notes')
           .doc(noteId)
           .set(noteData, SetOptions(merge: true));
+      print('Synced note $noteId to Firestore (queued if offline)');
     } catch (e) {
-      print('⚠️ Warning: Failed to sync note to Firestore: $e');
-      if (mounted) {
+      print('⚠️ Failed to sync note to Firestore: $e');
+      final connectivity = await Connectivity().checkConnectivity();
+      final isOffline = connectivity == ConnectivityResult.none;
+
+      if (isOffline) {
+        print('📴 Offline mode: Note saved locally and will sync when online.');
+      } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '⚠️ Saved locally. Sync will resume when online.',
+              '⚠️ Failed to sync note to cloud: $e',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             duration: const Duration(seconds: 4),
@@ -192,13 +276,14 @@ class _NotesDashboardState extends State<NotesDashboard> {
       }
     });
 
-    await _saveNotesToPrefs(); // ✅ Save to prefs immediately
+    await _saveNotesToPrefs();
 
     try {
       await FirebaseFirestore.instance.collection('notes').doc(id).update({
         'isDeleted': true,
       });
-      await _saveNotesToPrefs(); // ✅ Save again after Firestore to ensure it's synced
+      await _saveNotesToPrefs();
+      print('Deleted note $id in Firestore (queued if offline)');
     } catch (e) {
       print('⚠️ Warning: Failed to delete note on Firestore: $e');
     }
@@ -413,10 +498,15 @@ class _NotesDashboardState extends State<NotesDashboard> {
     );
 
     if (result != null) {
-      try {
-        await _loadNotesFromFirestore();
-      } catch (e) {
-        debugPrint('⚠️ Failed to load notes from Firestore: $e');
+      final connectivityResult = await Connectivity().checkConnectivity();
+      final isOffline = connectivityResult == ConnectivityResult.none;
+
+      if (!isOffline) {
+        try {
+          await _loadNotesFromFirestore();
+        } catch (e) {
+          debugPrint('⚠️ Failed to load notes from Firestore: $e');
+        }
       }
 
       await _loadNotesFromPrefs();
@@ -499,6 +589,28 @@ class _NotesDashboardState extends State<NotesDashboard> {
             ),
       );
     }
+  }
+
+  bool _isNoteEmpty(Map<String, dynamic> note) {
+    final title = note['title']?.toString().trim() ?? '';
+    final contentJson = note['contentJson'] as List<dynamic>? ?? [];
+
+    final hasTitle = title.isNotEmpty;
+    final hasText = contentJson.any(
+      (item) => (item['text']?.toString().trim().isNotEmpty ?? false),
+    );
+
+    final hasChecklist = contentJson.any((item) {
+      final checklist = (item['checklistItems'] as List<dynamic>? ?? []);
+      return checklist.any(
+        (task) => (task['text']?.toString().trim().isNotEmpty ?? false),
+      );
+    });
+
+    final hasImage = (note['imagePaths'] as List<dynamic>? ?? []).isNotEmpty;
+    final hasVoice = (note['voiceNote']?.toString().trim().isNotEmpty ?? false);
+
+    return !(hasTitle || hasText || hasChecklist || hasImage || hasVoice);
   }
 
   @override
@@ -817,6 +929,31 @@ class _NotesDashboardState extends State<NotesDashboard> {
                             ),
                           ),
                         ),
+                        IconButton(
+                          icon: const Icon(Icons.refresh),
+                          onPressed: () async {
+                            final connectivityResult =
+                                await Connectivity().checkConnectivity();
+                            final isOffline =
+                                connectivityResult == ConnectivityResult.none;
+                            if (!isOffline) {
+                              await SyncService.syncNow(
+                                context,
+                                onComplete: _loadNotesFromPrefs,
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Offline: Notes will sync when online',
+                                  ),
+                                  duration: Duration(seconds: 3),
+                                ),
+                              );
+                              await _loadNotesFromPrefs();
+                            }
+                          },
+                        ),
                       ],
             ),
             body: Padding(
@@ -835,7 +972,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
                             const SizedBox(height: 8),
                             Text(
                               isSearching
-                                  ? 'No matching notes'
+                                  ? 'You don\'t have any notes yet.'
                                   : 'Notes you add appear here',
                               style: Theme.of(
                                 context,

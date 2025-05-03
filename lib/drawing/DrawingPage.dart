@@ -1,16 +1,22 @@
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_image_gallery_saver/flutter_image_gallery_saver.dart';
+import 'package:pencraftpro/drawing/SavedDrawingPage.dart';
 
 class DrawingCanvasPage extends StatefulWidget {
-  const DrawingCanvasPage({super.key});
+  final File? loadedImage; // <— add this
+  final String? customTitle;
+
+  const DrawingCanvasPage({super.key, this.loadedImage, this.customTitle});
 
   @override
   State<DrawingCanvasPage> createState() => _DrawingCanvasPageState();
@@ -39,6 +45,36 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
   @override
   void initState() {
     super.initState();
+
+    // Load passed image as starting image
+    if (widget.loadedImage != null) {
+      _loadInitialImage(widget.loadedImage!);
+    }
+  }
+
+  Future<void> _loadInitialImage(File imageFile) async {
+    final data = await imageFile.readAsBytes();
+    final codec = await ui.instantiateImageCodec(data);
+    final frame = await codec.getNextFrame();
+
+    final screenSize = MediaQuery.of(context).size;
+    final imageSize = Size(
+      frame.image.width.toDouble(),
+      frame.image.height.toDouble(),
+    );
+
+    final scale = (screenSize.width * 0.6) / imageSize.width;
+    final offset = Offset(
+      (screenSize.width - (imageSize.width * scale)) / 2,
+      (screenSize.height - (imageSize.height * scale)) / 2,
+    );
+
+    setState(() {
+      _images.add(ImageData(image: frame.image, offset: offset, scale: scale));
+      _activeImageIndex = _images.length - 1;
+      _isAdjustingImage = false;
+      _saveState();
+    });
   }
 
   @override
@@ -193,6 +229,57 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
     });
   }
 
+  Future<void> _saveDrawingToLocal() async {
+    try {
+      RenderRepaintBoundary boundary =
+          _globalKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      final pngBytes = byteData!.buffer.asUint8List();
+
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName = 'drawing_${DateTime.now().millisecondsSinceEpoch}';
+      final filePath = '${directory.path}/$fileName.png';
+      final file = File(filePath);
+      await file.writeAsBytes(pngBytes);
+
+      // ✅ LOCAL SAVE - SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final savedDrawings = prefs.getStringList('saved_drawings') ?? [];
+      if (savedDrawings.length >= 100) {
+        savedDrawings.removeAt(0);
+      }
+      savedDrawings.add(
+        '$fileName|${DateTime.now().toIso8601String()}|${widget.customTitle ?? ''}',
+      );
+      await prefs.setStringList('saved_drawings', savedDrawings);
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('✅ Drawing saved locally.')));
+
+      // 🌐 FIRESTORE SAVE (only if online)
+      try {
+        final result = await InternetAddress.lookup('example.com');
+        if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+          await FirebaseFirestore.instance.collection('drawings').add({
+            'title': widget.customTitle ?? 'Untitled Drawing',
+            'localPath': filePath,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (e) {
+        debugPrint("Firestore skipped (offline): $e");
+      }
+    } catch (e) {
+      print('❌ Save failed: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('❌ Failed to save drawing: $e')));
+    }
+  }
+
   Future<bool> _isAndroid13OrAbove() async {
     if (Platform.isAndroid) {
       try {
@@ -243,7 +330,11 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
       final pngBytes = byteData!.buffer.asUint8List();
       print('PNG bytes length: ${pngBytes.length}');
 
-      final fileName = 'drawing_${DateTime.now().millisecondsSinceEpoch}';
+      final cleanTitle = (widget.customTitle ?? 'drawing').trim().replaceAll(
+        RegExp(r'\\s+'),
+        '',
+      );
+      final fileName = '${cleanTitle}_${DateTime.now().millisecondsSinceEpoch}';
 
       await FlutterImageGallerySaver.saveImage(pngBytes);
 
@@ -254,7 +345,9 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
       if (savedDrawings.length >= 100) {
         savedDrawings.removeAt(0);
       }
-      savedDrawings.add('$fileName|${DateTime.now().toIso8601String()}');
+      savedDrawings.add(
+        '$fileName|${DateTime.now().toIso8601String()}|${widget.customTitle ?? ''}',
+      );
       bool success = await prefs.setStringList('saved_drawings', savedDrawings);
       print('SharedPreferences save success: $success');
       print(
@@ -282,6 +375,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
           maxWidth: 1024,
           maxHeight: 1024,
         );
+
         if (picked != null) {
           final data = await picked.readAsBytes();
           final codec = await ui.instantiateImageCodec(data);
@@ -290,6 +384,19 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
             _images.add(
               ImageData(image: frame.image, offset: Offset.zero, scale: 1.0),
             );
+
+            final screenSize = MediaQuery.of(context).size;
+            final imageSize = Size(
+              frame.image.width.toDouble(),
+              frame.image.height.toDouble(),
+            );
+
+            final scale = (screenSize.width * 0.6) / imageSize.width;
+            final offset = Offset(
+              (screenSize.width - (imageSize.width * scale)) / 2,
+              (screenSize.height - (imageSize.height * scale)) / 2,
+            );
+
             _activeImageIndex = _images.length - 1;
             _isAdjustingImage = true;
             _saveState();
@@ -325,6 +432,19 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
             _images.add(
               ImageData(image: frame.image, offset: Offset.zero, scale: 1.0),
             );
+
+            final screenSize = MediaQuery.of(context).size;
+            final imageSize = Size(
+              frame.image.width.toDouble(),
+              frame.image.height.toDouble(),
+            );
+
+            final scale = (screenSize.width * 0.6) / imageSize.width;
+            final offset = Offset(
+              (screenSize.width - (imageSize.width * scale)) / 2,
+              (screenSize.height - (imageSize.height * scale)) / 2,
+            );
+
             _activeImageIndex = _images.length - 1;
             _isAdjustingImage = true;
             _saveState();
@@ -476,7 +596,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
 
   Future<bool> _onWillPop() async {
     if (_lines.isNotEmpty || _images.isNotEmpty) {
-      final shouldSave = await showDialog<bool?>(
+      final result = await showDialog<bool>(
         context: context,
         builder:
             (context) => AlertDialog(
@@ -486,21 +606,14 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Save'),
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(context, true),
                   style: TextButton.styleFrom(
-                    backgroundColor: Colors.red, // 🔴 Red background
-                    foregroundColor: Colors.white, // White text para kita
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
                   ),
                   child: const Text('Save'),
                 ),
@@ -508,11 +621,14 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
             ),
       );
 
-      if (shouldSave == true) {
-        await _saveAsImage();
-        return true;
-      } else if (shouldSave == false) {
-        return true;
+      if (result == true) {
+        await _saveDrawingToLocal();
+        if (!mounted) return false;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('✅ Drawing saved!')));
+        Navigator.pop(context); // balik sa DrawingDashboard.dart
+        return false;
       } else {
         return false;
       }
@@ -559,25 +675,59 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
             actions: [
               PopupMenuButton<String>(
                 icon: Icon(Icons.more_vert, color: theme.colorScheme.onPrimary),
-                onSelected: (value) {
+                onSelected: (value) async {
                   if (value == 'saved') {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Drawing saved successfully!'),
-                      ),
+                    final shouldSave = await showDialog<bool>(
+                      context: context,
+                      builder:
+                          (context) => AlertDialog(
+                            title: const Text('Save Drawing?'),
+                            content: const Text(
+                              'Do you want to save your drawing now?',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('Cancel'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                style: TextButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: const Text('Save'),
+                              ),
+                            ],
+                          ),
                     );
-                    _saveAsImage();
+
+                    if (shouldSave == true) {
+                      await _saveDrawingToLocal();
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('✅ Drawing saved.')),
+                      );
+                      await Future.delayed(const Duration(milliseconds: 500));
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SavedDrawingsPage(),
+                        ),
+                      );
+                    }
                   }
+
                   if (value == 'import') _importImage();
                   if (value == 'camera') _takePicture();
                   if (value == 'save') _saveAsImage();
                 },
                 itemBuilder:
                     (_) => const [
-                      //(
-                      //   value: 'saved',
-                      //   child: Text('Saved Drawings'),
-                      // ),
+                      PopupMenuItem(
+                        value: 'saved',
+                        child: Text('Save Drawing'),
+                      ),
                       PopupMenuItem(
                         value: 'import',
                         child: Text('Import Image'),

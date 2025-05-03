@@ -51,6 +51,55 @@ class _FoldersState extends State<Folders> {
     super.dispose();
   }
 
+  void _showRenameFolderDialog(Folder folder) async {
+    final controller = TextEditingController(text: folder.name);
+
+    final newName = await showDialog<String>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Text(
+              'Rename Folder',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              style: Theme.of(context).textTheme.bodyMedium,
+              decoration: const InputDecoration(
+                hintText: 'New folder name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+
+    if (newName != null && newName.isNotEmpty && newName != folder.name) {
+      final index = folders.indexWhere((f) => f.id == folder.id);
+      if (index != -1) {
+        folders[index] = Folder(id: folder.id, name: newName);
+        await FolderService.saveFolders(folders);
+        setState(() {});
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Folder renamed to "$newName"')));
+      }
+    }
+  }
+
   Future<void> _loadFolders() async {
     final loaded = await FolderService.loadFolders();
     setState(() => folders = loaded);
@@ -425,17 +474,19 @@ class _FoldersState extends State<Folders> {
                               folder.name,
                               style: Theme.of(
                                 context,
-                              ).textTheme.bodyMedium?.copyWith(
-                                fontSize: 14,
-                                fontWeight: FontWeight.normal,
-                                color:
-                                    Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium?.color,
-                              ),
+                              ).textTheme.bodyMedium?.copyWith(fontSize: 14),
                               overflow: TextOverflow.ellipsis,
                             ),
+                            trailing:
+                                isSelecting
+                                    ? IconButton(
+                                      icon: const Icon(Icons.edit, size: 20),
+                                      onPressed:
+                                          () => _showRenameFolderDialog(folder),
+                                    )
+                                    : null,
                           ),
+
                           if (isSelected)
                             Positioned(
                               top: 8,

@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:pencraftpro/FolderService.dart';
 
@@ -115,8 +114,6 @@ class _ViewLabelPageState extends State<ViewLabelPage> {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -141,31 +138,6 @@ class _ViewLabelPageState extends State<ViewLabelPage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 8),
-            if (widget.reminder != null)
-              Row(
-                children: [
-                  Icon(
-                    Icons.alarm,
-                    size: 20,
-                    color:
-                        widget.reminder!.isBefore(now)
-                            ? Theme.of(context).colorScheme.error
-                            : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    DateFormat('MMM dd, yyyy hh:mm a').format(widget.reminder!),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: 14,
-                      color:
-                          widget.reminder!.isBefore(now)
-                              ? Theme.of(context).colorScheme.error
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
             const SizedBox(height: 8),
             if (_folderName != null)
               Row(

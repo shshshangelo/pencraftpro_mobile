@@ -1,83 +1,104 @@
 import 'package:flutter/material.dart';
-import '../drawing/DrawingPage.dart'; // Import the New Drawing page
-import '../drawing/SavedDrawingPage.dart'; // Import the Saved Drawings page
+import '../drawing/DrawingPage.dart';
+import '../drawing/SavedDrawingPage.dart';
 
 class DrawingDashboard extends StatelessWidget {
   const DrawingDashboard({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final isPortrait =
+        MediaQuery.of(context).orientation == Orientation.portrait;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Drawing Dashboard'),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center, // Center vertically
-            crossAxisAlignment:
-                CrossAxisAlignment.center, // Center horizontally
-            children: [
-              Image.asset(
-                'assets/aclc.png',
-                width: 250, // Adjust width as needed
-                height: 200, // Adjust height as needed
-                fit: BoxFit.contain, // Ensure the logo scales properly
+      body:
+          isPortrait
+              ? _buildPortraitLayout(context)
+              : _buildLandscapeLayout(context),
+    );
+  }
+
+  // Portrait layout (exact as you described)
+  Widget _buildPortraitLayout(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Image.asset(
+              'assets/aclc.png',
+              width: 250,
+              height: 200,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Welcome to Your Drawing Dashboard',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Satisfy',
+                fontSize: 28,
+                fontWeight: FontWeight.w500,
+                color: Theme.of(context).colorScheme.primary,
               ),
-              const SizedBox(height: 20),
-              Text(
-                'Welcome to Your Drawing Dashboard',
-                textAlign: TextAlign.center, // Ensure text is centered
-                style: TextStyle(
-                  fontFamily: 'Satisfy',
-                  fontSize: 28,
-                  fontWeight: FontWeight.w500,
-                  color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 20),
+            GridView.count(
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _buildDashboardCard(
+                  context,
+                  icon: Icons.draw_rounded,
+                  title: 'New Drawing',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const DrawingCanvasPage(),
+                      ),
+                    );
+                  },
                 ),
-              ),
-              const SizedBox(height: 20),
-              GridView.count(
-                crossAxisCount: 2,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                shrinkWrap:
-                    true, // Prevent GridView from expanding unnecessarily
-                physics:
-                    const NeverScrollableScrollPhysics(), // Disable scrolling
-                children: [
-                  _buildDashboardCard(
-                    context,
-                    icon: Icons.draw_rounded,
-                    title: 'New Drawing',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const DrawingCanvasPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDashboardCard(
-                    context,
-                    icon: Icons.folder_open,
-                    title: 'Saved Drawings',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const SavedDrawingsPage(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
+                _buildDashboardCard(
+                  context,
+                  icon: Icons.folder_open,
+                  title: 'Saved Drawings',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SavedDrawingsPage(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Landscape version, same layout pero mas compressed if needed
+  Widget _buildLandscapeLayout(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 600),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: _buildPortraitLayout(context),
         ),
       ),
     );

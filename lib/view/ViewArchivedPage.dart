@@ -110,51 +110,51 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
           'View Mode Only - Archived',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
             color: Theme.of(context).colorScheme.onPrimary,
-            fontSize: 20,
+            fontSize: 22,
           ),
         ),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               widget.title.isNotEmpty ? widget.title : 'Untitled',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontSize: 24,
+                fontSize: 28,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             if (_folderName != null)
               Row(
                 children: [
                   Icon(
                     Icons.folder,
-                    size: 20,
+                    size: 24,
                     color:
                         widget.folderColor != null
                             ? Color(widget.folderColor!)
                             : Theme.of(context).colorScheme.primary,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   Text(
                     _folderName!,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: 14,
+                      fontSize: 16,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
               ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             if (widget.labels.isNotEmpty)
               Wrap(
-                spacing: 6,
-                runSpacing: 6,
+                spacing: 8,
+                runSpacing: 8,
                 children:
                     widget.labels.map((label) {
                       return Chip(
@@ -163,7 +163,7 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                           style: Theme.of(
                             context,
                           ).textTheme.bodySmall?.copyWith(
-                            fontSize: 12,
+                            fontSize: 14,
                             color:
                                 Theme.of(
                                   context,
@@ -175,7 +175,7 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                       );
                     }).toList(),
               ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             ...widget.contentJson.map((item) {
               final checklistItems =
                   item['checklistItems'] as List<dynamic>? ?? [];
@@ -203,7 +203,7 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                                       checked
                                           ? TextDecoration.lineThrough
                                           : null,
-                                  fontSize: 14,
+                                  fontSize: 16,
                                   fontFamily: widget.fontFamily ?? 'Roboto',
                                   color:
                                       Theme.of(
@@ -218,11 +218,11 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                 );
               } else {
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
+                  padding: const EdgeInsets.only(bottom: 16.0),
                   child: Text(
                     item['text'] ?? '',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: (item['fontSize'] ?? 16).toDouble(),
+                      fontSize: (item['fontSize'] ?? 18).toDouble(),
                       fontWeight:
                           item['bold'] == true
                               ? FontWeight.bold
@@ -243,22 +243,22 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                 );
               }
             }),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             if (widget.imagePaths.isNotEmpty)
               SizedBox(
-                height: 200,
+                height: 240,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount: widget.imagePaths.length,
                   itemBuilder: (context, index) {
                     return Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
+                      padding: const EdgeInsets.only(right: 10.0),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: Image.file(
                           File(widget.imagePaths[index]),
-                          width: 180,
-                          height: 200,
+                          width: 220,
+                          height: 240,
                           fit: BoxFit.cover,
                         ),
                       ),
@@ -266,7 +266,7 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                   },
                 ),
               ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             if (widget.voiceNote != null)
               Row(
                 children: [
@@ -304,7 +304,7 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                   Text(
                     '${_formatDuration(_currentPosition)} / ${_formatDuration(_totalDuration)}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: 12,
+                      fontSize: 14,
                       color: Theme.of(context).textTheme.bodySmall?.color,
                     ),
                   ),

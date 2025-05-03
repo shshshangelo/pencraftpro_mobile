@@ -21,6 +21,8 @@ import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:pencraftpro/FolderService.dart';
+import 'package:pencraftpro/LabelService.dart';
+
 import 'FullScreenImageViewer.dart';
 import '../notes/FullScreenGallery.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -1275,46 +1277,134 @@ class _AddNotePageState extends State<AddNotePage> {
   }
 
   void _addLabel() async {
-    final labelController = TextEditingController(text: '');
+    List labels = await LabelService.loadLabels();
+    labels = labels.reversed.toList();
 
-    await showDialog(
+    await showModalBottomSheet(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            content: TextField(
-              controller: labelController,
-              autofocus: true,
-              style: const TextStyle(fontSize: 14),
-              decoration: const InputDecoration(
-                hintText: 'Enter label',
-                hintStyle: TextStyle(fontSize: 14),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () {
-                  final label = labelController.text.trim();
-                  if (label.isNotEmpty && label != 'Enter label') {
-                    setState(() {
-                      _labels.add(label);
-                    });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Label "$label" added.'),
-                        backgroundColor: Colors.green,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.add),
+                      title: Text(
+                        'New Label',
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
-                    );
-                  }
-                  Navigator.pop(context);
-                },
-                child: const Text('Add'),
+                      onTap: () async {
+                        final controller = TextEditingController(
+                          text: "New Label",
+                        );
+                        final labelName = await showDialog<String>(
+                          context: context,
+                          builder:
+                              (context) => AlertDialog(
+                                title: Text(
+                                  'Create New Label',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                                content: TextField(
+                                  controller: controller,
+                                  autofocus: true,
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                  decoration: const InputDecoration(
+                                    hintText: 'Label name',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: Text(
+                                      'Cancel',
+                                      style:
+                                          Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium,
+                                    ),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.pop(
+                                        context,
+                                        controller.text.trim(),
+                                      );
+                                    },
+                                    child: Text(
+                                      'Create',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium?.copyWith(
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.onPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                        );
+
+                        if (labelName != null && labelName.isNotEmpty) {
+                          await LabelService.addLabel(labelName);
+                          final updatedLabels = await LabelService.loadLabels();
+                          setSheetState(() {
+                            labels = updatedLabels.reversed.toList();
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Label "$labelName" created'),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    const Divider(),
+                    SizedBox(
+                      height: 300,
+                      child: ListView.builder(
+                        itemCount: labels.length,
+                        itemBuilder: (context, index) {
+                          final label = labels[index];
+                          return ListTile(
+                            leading: const Icon(Icons.label),
+                            title: Text(
+                              label.name,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap: () {
+                              setState(() {
+                                if (!_labels.contains(label.name)) {
+                                  _labels.add(label.name);
+                                }
+                              });
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Label "${label.name}" added'),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1384,44 +1474,76 @@ class _AddNotePageState extends State<AddNotePage> {
     }
 
     try {
+      // Normalize email
+      final normalizedEmail = email.toLowerCase().trim();
+      if (normalizedEmail.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a valid email.')),
+        );
+        return;
+      }
+
+      // Check if the email is already a collaborator
+      if (_collaboratorEmails.contains(normalizedEmail)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This user is already a collaborator.')),
+        );
+        return;
+      }
+
+      // Query the users collection
       final userQuery =
           await FirebaseFirestore.instance
               .collection('users')
-              .where('email', isEqualTo: email.toLowerCase())
+              .where('email', isEqualTo: normalizedEmail)
               .get();
 
       if (userQuery.docs.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Email not found or registered yet')),
+          const SnackBar(content: Text('No user found with this email.')),
         );
         return;
       }
 
       final collaboratorUid = userQuery.docs.first.id;
 
+      // Update the note in Firestore
       final noteRef = FirebaseFirestore.instance
           .collection('notes')
           .doc(widget.noteId);
-
       await noteRef.set({
         'collaborators': FieldValue.arrayUnion([collaboratorUid]),
-        'collaboratorEmails': FieldValue.arrayUnion([email.toLowerCase()]),
+        'collaboratorEmails': FieldValue.arrayUnion([normalizedEmail]),
         'updatedAt': Timestamp.now(),
       }, SetOptions(merge: true));
 
+      // Update local state
       setState(() {
-        if (!_collaboratorEmails.contains(email.toLowerCase())) {
-          _collaboratorEmails.add(email.toLowerCase());
-        }
+        _collaboratorEmails.add(normalizedEmail);
       });
 
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Note shared with $email')));
+    } on FirebaseException catch (e) {
+      String message;
+      switch (e.code) {
+        case 'permission-denied':
+          message = 'Permission denied. Please check Firestore rules.';
+          break;
+        case 'unavailable':
+          message = 'Network error. Please check your connection.';
+          break;
+        default:
+          message = 'Failed to add collaborator: ${e.message}';
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Failed to share note: $e')));
+      ).showSnackBar(SnackBar(content: Text('Unexpected error: $e')));
     }
   }
 
@@ -1589,7 +1711,7 @@ class _AddNotePageState extends State<AddNotePage> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Collaborators'), // default size
+          title: const Text('Collaborators'),
           content:
               _collaboratorEmails.isEmpty
                   ? const Text('No collaborators yet.')
@@ -1603,9 +1725,7 @@ class _AddNotePageState extends State<AddNotePage> {
                         return ListTile(
                           title: Text(
                             email,
-                            style: const TextStyle(
-                              fontSize: 14,
-                            ), // email text size adjust
+                            style: const TextStyle(fontSize: 14),
                           ),
                           trailing: IconButton(
                             icon: const Icon(
@@ -1878,7 +1998,12 @@ class _AddNotePageState extends State<AddNotePage> {
       final isStrikethrough = item['strikethrough'] == true;
       final fontSize = (item['fontSize'] as num?)?.toDouble() ?? 16.0;
       final fontFamily = item['fontFamily'] ?? 'Roboto';
-      final checklistItems = item['checklistItems'] as List<dynamic>? ?? [];
+      final checklistItems =
+          (item['checklistItems'] as List<dynamic>? ?? [])
+              .where(
+                (task) => (task['text']?.toString().trim().isNotEmpty ?? false),
+              )
+              .toList();
       final selectedFont = fontMap[fontFamily] ?? fontMap['Roboto']!;
 
       if (text.isNotEmpty) {
@@ -1974,7 +2099,12 @@ class _AddNotePageState extends State<AddNotePage> {
 
   bool _hasChecklist() {
     for (var item in widget.contentJson ?? []) {
-      final checklistItems = item['checklistItems'] as List<dynamic>? ?? [];
+      final checklistItems =
+          (item['checklistItems'] as List<dynamic>? ?? [])
+              .where(
+                (task) => (task['text']?.toString().trim().isNotEmpty ?? false),
+              )
+              .toList();
       if (checklistItems.isNotEmpty) return true;
     }
     return false;
@@ -2000,6 +2130,7 @@ class _AddNotePageState extends State<AddNotePage> {
                     _addLabel();
                   },
                 ),
+
                 ListTile(
                   leading: const Icon(Icons.folder),
                   title: const Text(
@@ -2009,7 +2140,7 @@ class _AddNotePageState extends State<AddNotePage> {
                   onTap: () async {
                     Navigator.pop(context);
 
-                    List folders = await FolderService.loadFolders();
+                    List<Folder> folders = await FolderService.loadFolders();
                     folders = folders.reversed.toList();
 
                     await showModalBottomSheet(

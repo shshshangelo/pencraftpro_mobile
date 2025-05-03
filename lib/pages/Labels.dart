@@ -2,6 +2,7 @@
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:pencraftpro/LabelService.dart';
 import 'package:pencraftpro/services/logout_service.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,11 +21,106 @@ class _LabelsState extends State<Labels> {
   bool isEditing = false;
   List<Map<String, dynamic>> notes = [];
   Set<String> selectedLabels = {};
+  List<String> availableLabels = [];
 
   @override
   void initState() {
     super.initState();
     _loadNotesFromPrefs();
+    _syncNoteLabelsToLabelService(); // ← ADD THIS
+  }
+
+  void _showRenameDialog(String oldName) async {
+    final controller = TextEditingController(text: oldName);
+
+    final newName = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(
+              'Rename Label',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+
+            content: TextField(
+              controller: controller,
+              style:
+                  Theme.of(
+                    context,
+                  ).textTheme.bodyMedium, // ← ito yung default text style
+              decoration: const InputDecoration(
+                hintText: 'New label name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, controller.text.trim()),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+
+    if (newName != null && newName.isNotEmpty && newName != oldName) {
+      // Update sa LabelService
+      final labels = await LabelService.loadLabels();
+      final index = labels.indexWhere((l) => l.name == oldName);
+      if (index != -1) {
+        labels[index] = Label(id: labels[index].id, name: newName);
+        await LabelService.saveLabels(labels);
+      }
+
+      // Update sa lahat ng notes na may oldName
+      for (var note in notes) {
+        final noteLabels = (note['labels'] as List<dynamic>?) ?? [];
+        if (noteLabels.contains(oldName)) {
+          note['labels'] =
+              noteLabels.map((e) => e == oldName ? newName : e).toList();
+        }
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('notes', jsonEncode(notes));
+
+      setState(() {});
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Label renamed to "$newName"')));
+    }
+  }
+
+  void _loadLabelsFromService() async {
+    final labelObjects = await LabelService.loadLabels();
+    setState(() {
+      availableLabels = labelObjects.map((label) => label.name).toList();
+    });
+  }
+
+  Future<void> _syncNoteLabelsToLabelService() async {
+    final prefs = await SharedPreferences.getInstance();
+    final notesJson = prefs.getString('notes') ?? '[]';
+    final List<dynamic> noteList = jsonDecode(notesJson);
+
+    final Set<String> labelsInNotes = {};
+    for (var note in noteList) {
+      final labels = (note['labels'] as List<dynamic>?) ?? [];
+      labelsInNotes.addAll(labels.map((e) => e.toString()));
+    }
+
+    final existing = await LabelService.loadLabels();
+    final existingNames = existing.map((e) => e.name).toSet();
+
+    for (final name in labelsInNotes) {
+      if (!existingNames.contains(name)) {
+        await LabelService.addLabel(name);
+      }
+    }
   }
 
   Future<void> _loadNotesFromPrefs() async {
@@ -60,7 +156,7 @@ class _LabelsState extends State<Labels> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             content: Text(
-              'Are you sure you want to delete the selected labels? This will remove them from all notes.',
+              'Are you sure you want to delete the selected labels? This will remove them from all notes and label list.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             actions: [
@@ -90,6 +186,7 @@ class _LabelsState extends State<Labels> {
     );
 
     if (confirm == true) {
+      // 1. Remove from all notes
       setState(() {
         for (var note in notes) {
           note['labels'] =
@@ -98,11 +195,24 @@ class _LabelsState extends State<Labels> {
                   .toList() ??
               [];
         }
-        selectedLabels.clear();
         isEditing = false;
       });
+
+      // 2. Remove from LabelService
+      final existing = await LabelService.loadLabels();
+      final updated =
+          existing
+              .where((label) => !selectedLabels.contains(label.name))
+              .toList();
+      await LabelService.saveLabels(updated);
+
+      // 3. Save updated notes
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('notes', jsonEncode(notes));
+
+      selectedLabels.clear();
+      setState(() {});
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Labels deleted')));
@@ -124,63 +234,129 @@ class _LabelsState extends State<Labels> {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return Scaffold(
-        body: Center(
-          child: Text(
-            'Please sign in to view notes',
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-        ),
-      );
-    }
+    return FutureBuilder<List<Label>>(
+      future: LabelService.loadLabels(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    final Set<String> allLabels = {};
-    for (var note in notes) {
-      final labels = (note['labels'] as List<dynamic>?) ?? [];
-      allLabels.addAll(labels.map((e) => e.toString()));
-    }
+        final allLabels = snapshot.data!.map((e) => e.name).toSet();
 
-    final filteredLabels =
-        allLabels.where((label) {
-          final query = _searchController.text.toLowerCase();
-          return label.toLowerCase().contains(query);
-        }).toList();
+        final filteredLabels =
+            allLabels
+                .where(
+                  (label) => label.toLowerCase().contains(
+                    _searchController.text.toLowerCase(),
+                  ),
+                )
+                .toList();
 
-    return WillPopScope(
-      onWillPop: () async {
-        Navigator.pushNamed(context, '/notes');
-        return false;
-      },
-      child: OrientationBuilder(
-        builder: (context, orientation) {
-          final isLandscape = orientation == Orientation.landscape;
-          final screenWidth = MediaQuery.of(context).size.width;
-          const minCardWidth = 150.0;
-          final crossAxisCount = (screenWidth / minCardWidth).floor().clamp(
-            2,
-            4,
-          );
-          final padding = screenWidth * 0.03;
-          final spacing = screenWidth * 0.02;
-
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) {
           return Scaffold(
-            drawer: _buildDrawer(context),
-            appBar: _buildAppBar(context, filteredLabels.toSet()),
-            body:
-                filteredLabels.isEmpty
-                    ? _buildEmptyState()
-                    : _buildLabelsGrid(
-                      filteredLabels,
-                      padding,
-                      spacing,
-                      crossAxisCount,
-                    ),
-            bottomNavigationBar: _buildBottomAppBar(),
+            body: Center(
+              child: Text(
+                'Please sign in to view notes',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            ),
           );
-        },
-      ),
+        }
+
+        return WillPopScope(
+          onWillPop: () async {
+            Navigator.pushNamed(context, '/notes');
+            return false;
+          },
+          child: OrientationBuilder(
+            builder: (context, orientation) {
+              final isLandscape = orientation == Orientation.landscape;
+              final screenWidth = MediaQuery.of(context).size.width;
+              const minCardWidth = 150.0;
+              final crossAxisCount = (screenWidth / minCardWidth).floor().clamp(
+                2,
+                4,
+              );
+              final padding = screenWidth * 0.03;
+              final spacing = screenWidth * 0.02;
+
+              return Scaffold(
+                drawer: _buildDrawer(context),
+                appBar: _buildAppBar(context, filteredLabels.toSet()),
+                body:
+                    filteredLabels.isEmpty
+                        ? _buildEmptyState()
+                        : _buildLabelsGrid(
+                          filteredLabels,
+                          padding,
+                          spacing,
+                          crossAxisCount,
+                        ),
+                bottomNavigationBar: _buildBottomAppBar(),
+                floatingActionButton: FloatingActionButton(
+                  onPressed: () async {
+                    final controller = TextEditingController();
+                    final newLabel = await showDialog<String>(
+                      context: context,
+                      builder:
+                          (ctx) => AlertDialog(
+                            title: Text(
+                              'Create New Label',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            content: TextField(
+                              controller: controller,
+                              autofocus: true,
+                              style:
+                                  Theme.of(
+                                    context,
+                                  ).textTheme.bodyMedium, // default font size
+                              decoration: InputDecoration(
+                                hintText: 'Label name',
+                                hintStyle: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).hintColor,
+                                ),
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
+
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx),
+                                child: const Text('Cancel'),
+                              ),
+                              ElevatedButton(
+                                onPressed:
+                                    () => Navigator.pop(
+                                      ctx,
+                                      controller.text.trim(),
+                                    ),
+                                child: const Text('Create'),
+                              ),
+                            ],
+                          ),
+                    );
+
+                    if (newLabel != null && newLabel.isNotEmpty) {
+                      await LabelService.addLabel(newLabel);
+                      setState(() {});
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Label "$newLabel" created')),
+                      );
+                    }
+                  },
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  child: const Icon(Icons.add),
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -439,93 +615,68 @@ class _LabelsState extends State<Labels> {
     double spacing,
     int crossAxisCount,
   ) {
-    return GridView.builder(
+    return ListView.builder(
       padding: EdgeInsets.all(padding),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        crossAxisSpacing: spacing,
-        mainAxisSpacing: spacing,
-        childAspectRatio: 0.65,
-      ),
       itemCount: labels.length,
       itemBuilder: (context, index) {
         final label = labels[index];
         final isSelected = selectedLabels.contains(label);
 
-        return GestureDetector(
-          onTap: () {
-            if (isEditing) {
-              setState(() {
-                if (isSelected) {
-                  selectedLabels.remove(label);
-                } else {
-                  selectedLabels.add(label);
-                }
-              });
-            } else {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder:
-                      (_) => NotesByLabelScreen(label: label, notes: notes),
-                ),
-              );
-            }
-          },
-          child: Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side:
-                  isSelected
-                      ? BorderSide(
-                        color: Theme.of(context).colorScheme.primary,
-                        width: 2,
-                      )
-                      : BorderSide.none,
-            ),
-            elevation: 3,
-            child: SizedBox(
-              height: 300,
-              child: Stack(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.label,
-                          size: 50,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          label,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (isSelected)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Icon(
-                        Icons.check_circle,
-                        color: Theme.of(context).colorScheme.primary,
-                        size: 24,
-                      ),
-                    ),
-                ],
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
               ),
+            ],
+          ),
+          child: ListTile(
+            leading: const Icon(Icons.label),
+            title: Text(
+              label,
+              style: Theme.of(context).textTheme.bodyMedium,
+              overflow: TextOverflow.ellipsis,
             ),
+            trailing:
+                isEditing
+                    ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit, size: 20),
+                          onPressed: () => _showRenameDialog(label),
+                        ),
+                        if (isSelected)
+                          Icon(
+                            Icons.check_circle,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                      ],
+                    )
+                    : null,
+            selected: isSelected,
+            onTap: () {
+              if (isEditing) {
+                setState(() {
+                  isSelected
+                      ? selectedLabels.remove(label)
+                      : selectedLabels.add(label);
+                });
+              } else {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder:
+                        (_) => NotesByLabelScreen(label: label, notes: notes),
+                  ),
+                );
+              }
+            },
           ),
         );
       },

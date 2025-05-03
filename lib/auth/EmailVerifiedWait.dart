@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../SelectionAction.dart';
 
@@ -10,18 +11,54 @@ class EmailVerifiedWait extends StatefulWidget {
 }
 
 class _EmailVerifiedWaitState extends State<EmailVerifiedWait> {
+  Timer? _timer;
+
   @override
   void initState() {
     super.initState();
-    // Wait for 5 seconds then navigate to SelectionAction
-    Timer(const Duration(seconds: 5), () {
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const SelectionAction()),
-        );
+    _startVerificationCheck();
+  }
+
+  void _startVerificationCheck() {
+    final user = FirebaseAuth.instance.currentUser;
+
+    // Auto-pass Google Sign-In users
+    final isGoogleUser =
+        user?.providerData.any((info) => info.providerId == 'google.com') ??
+        false;
+
+    if (isGoogleUser) {
+      Future.delayed(const Duration(seconds: 3), () {
+        _navigateToSelect();
+      });
+      return;
+    }
+
+    // Poll email verification every 3 seconds
+    _timer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      await FirebaseAuth.instance.currentUser?.reload();
+      final refreshedUser = FirebaseAuth.instance.currentUser;
+
+      if (refreshedUser != null && refreshedUser.emailVerified) {
+        timer.cancel();
+        _navigateToSelect();
       }
     });
+  }
+
+  void _navigateToSelect() {
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const SelectionAction()),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   @override

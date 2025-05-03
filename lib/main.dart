@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -23,16 +24,34 @@ import 'aboutapp/HowToUseApp.dart';
 import 'aboutapp/Team.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 import 'dashboard/DrawingDashboard.dart';
 import 'drawing/DrawingPage.dart';
 import 'drawing/SavedDrawingPage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
 
-  tz.initializeTimeZones();
+  // Initialize Firebase
+  try {
+    await Firebase.initializeApp();
+    debugPrint('Firebase initialized successfully');
+  } catch (e) {
+    debugPrint('Failed to initialize Firebase: $e');
+  }
 
+  // Initialize timezone and set to Asia/Manila
+  try {
+    tz.initializeTimeZones();
+    tz.setLocalLocation(tz.getLocation('Asia/Manila'));
+    debugPrint('Timezone set to Asia/Manila');
+  } catch (e) {
+    debugPrint('Failed to initialize timezone: $e');
+  }
+
+  // Initialize notifications
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   const initializationSettingsAndroid = AndroidInitializationSettings(
     '@mipmap/ic_launcher',
@@ -40,7 +59,33 @@ void main() async {
   const initializationSettings = InitializationSettings(
     android: initializationSettingsAndroid,
   );
-  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+  try {
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+    debugPrint('FlutterLocalNotifications initialized');
+  } catch (e) {
+    debugPrint('Failed to initialize notifications: $e');
+  }
+
+  // Check notification and battery optimization permissions (Android only)
+  if (Platform.isAndroid) {
+    final notificationPermission = await Permission.notification.status;
+    debugPrint('Notification permission status: $notificationPermission');
+    // Defer prompting to AddNotePage to avoid overwhelming users at startup
+
+    if (Platform.version.contains('6.0') ||
+        Platform.version.contains('7.0') ||
+        Platform.version.contains('8.0') ||
+        Platform.version.contains('9.0') ||
+        Platform.version.contains('10.0') ||
+        Platform.version.contains('11.0') ||
+        Platform.version.contains('12.0') ||
+        Platform.version.contains('13.0')) {
+      final batteryOptimizationStatus =
+          await Permission.ignoreBatteryOptimizations.status;
+      debugPrint('Battery optimization status: $batteryOptimizationStatus');
+      // Defer prompting to AddNotePage
+    }
+  }
 
   runApp(const MyApp());
 }
@@ -218,42 +263,52 @@ class MyHomePage extends StatelessWidget {
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                height: 140,
-                width: 300,
-                child: Image.asset(
-                  'assets/logo1.png',
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(
-                      Icons.broken_image,
-                      size: 100,
-                      color: Colors.grey,
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 15),
-              Text(
-                '"Write It. Draw It. Own It."',
-                style: GoogleFonts.dancingScript(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 40),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, '/login');
-                },
-                child: const Text('Get Started'),
-              ),
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isLandscape =
+                  MediaQuery.of(context).orientation == Orientation.landscape;
+              final imageSize = isLandscape ? 200.0 : 140.0;
+              final containerWidth = isLandscape ? 400.0 : 300.0;
+              final fontSize = isLandscape ? 40.0 : 30.0;
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    height: imageSize,
+                    width: containerWidth,
+                    child: Image.asset(
+                      'assets/logo1.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.broken_image,
+                          size: 100,
+                          color: Colors.grey,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  Text(
+                    '"Write It. Draw It. Own It."',
+                    style: GoogleFonts.dancingScript(
+                      fontSize: fontSize,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 40),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/login');
+                    },
+                    child: const Text('Get Started'),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -264,46 +319,66 @@ class MyHomePage extends StatelessWidget {
 class RedirectPage extends StatelessWidget {
   const RedirectPage({super.key});
 
+  Future<void> handleRedirect(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      debugPrint("🔴 No user found, redirecting to /welcome");
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/welcome', (route) => false);
+      return;
+    }
+
+    bool isNameVerified = false;
+    bool isRoleSelected = false;
+    bool isIdVerified = false;
+    bool isFirstTimeUser = true;
+
+    try {
+      final docRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid);
+      final docSnapshot = await docRef.get();
+
+      if (docSnapshot.exists) {
+        final data = docSnapshot.data()!;
+        isNameVerified = data['isNameVerified'] ?? false;
+        isRoleSelected = data['isRoleSelected'] ?? false;
+        isIdVerified = data['isIdVerified'] ?? false;
+        isFirstTimeUser = data['isFirstTimeUser'] ?? true;
+        debugPrint("🟢 Firestore flags loaded");
+      } else {
+        debugPrint("🟡 Firestore doc does not exist, fallback to prefs");
+      }
+    } catch (e) {
+      debugPrint("⚠️ Firestore error: $e — using SharedPreferences");
+      final prefs = await SharedPreferences.getInstance();
+      isNameVerified = prefs.getBool('isNameVerified') ?? false;
+      isRoleSelected = prefs.getBool('isRoleSelected') ?? false;
+      isIdVerified = prefs.getBool('isIdVerified') ?? false;
+      isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
+    }
+
+    final isFullyVerified =
+        isNameVerified && isRoleSelected && isIdVerified && !isFirstTimeUser;
+    debugPrint("✅ Verification Status: $isFullyVerified");
+
+    if (isFullyVerified) {
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/select', (route) => false);
+    } else {
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/accountsettings', (route) => false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        Navigator.of(
-          context,
-        ).pushNamedAndRemoveUntil('/welcome', (route) => false);
-      } else {
-        final docRef = FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid);
-        final docSnapshot = await docRef.get();
+    Future.delayed(Duration.zero, () => handleRedirect(context));
 
-        if (docSnapshot.exists) {
-          final data = docSnapshot.data()!;
-          final isNameVerified = data['isNameVerified'] ?? false;
-          final isRoleSelected = data['isRoleSelected'] ?? false;
-          final isIdVerified = data['isIdVerified'] ?? false;
-          final isFirstTimeUser = data['isFirstTimeUser'] ?? true;
-
-          if (isNameVerified &&
-              isRoleSelected &&
-              isIdVerified &&
-              !isFirstTimeUser) {
-            Navigator.of(
-              context,
-            ).pushNamedAndRemoveUntil('/select', (route) => false);
-          } else {
-            Navigator.of(
-              context,
-            ).pushNamedAndRemoveUntil('/accountsettings', (route) => false);
-          }
-        } else {
-          Navigator.of(
-            context,
-          ).pushNamedAndRemoveUntil('/accountsettings', (route) => false);
-        }
-      }
-    });
     return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }

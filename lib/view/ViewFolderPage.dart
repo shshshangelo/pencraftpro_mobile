@@ -53,10 +53,10 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Notes in Folder',
+          'View Mode Only - Folders',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
             color: Theme.of(context).colorScheme.onPrimary,
-            fontSize: 20,
+            fontSize: 22,
           ),
         ),
         backgroundColor: Theme.of(context).colorScheme.primary,
@@ -66,9 +66,10 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
           notes.isEmpty
               ? Center(
                 child: Text(
-                  'No notes in this folder',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                  'No notes found for this folder.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontSize: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               )
@@ -76,9 +77,9 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                 padding: const EdgeInsets.all(16),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                  childAspectRatio: 0.75,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 0.72,
                 ),
                 itemCount: notes.length,
                 itemBuilder: (context, index) {
@@ -122,9 +123,9 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      elevation: 3,
+                      elevation: 4,
                       child: Padding(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(14),
                         child: SingleChildScrollView(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,20 +136,23 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                   if (imagePaths.isNotEmpty)
                                     Icon(
                                       Icons.image,
-                                      size: 16,
+                                      size: 20,
                                       color:
                                           Theme.of(
                                             context,
                                           ).colorScheme.onSurfaceVariant,
                                     ),
                                   if (note['voiceNote'] != null)
-                                    Icon(
-                                      Icons.mic,
-                                      size: 16,
-                                      color:
-                                          Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 4),
+                                      child: Icon(
+                                        Icons.mic,
+                                        size: 20,
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                      ),
                                     ),
                                   if ((note['contentJson'] as List?)?.any(
                                         (e) =>
@@ -157,29 +161,37 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                             true,
                                       ) ==
                                       true)
-                                    Icon(
-                                      Icons.checklist,
-                                      size: 16,
-                                      color:
-                                          Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 4),
+                                      child: Icon(
+                                        Icons.checklist,
+                                        size: 20,
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                      ),
                                     ),
                                   if (note['folderId'] != null)
-                                    Icon(
-                                      Icons.bookmark,
-                                      size: 16,
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 4),
+                                      child: Icon(
+                                        Icons.bookmark,
+                                        size: 20,
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                      ),
                                     ),
                                 ],
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 10),
 
                               // Labels
                               if (labels.isNotEmpty)
                                 Wrap(
-                                  spacing: 4,
+                                  spacing: 6,
                                   runSpacing: 4,
                                   children:
                                       labels.map((label) {
@@ -196,7 +208,7 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                             children: [
                                               Icon(
                                                 Icons.label_important,
-                                                size: 12,
+                                                size: 14,
                                                 color:
                                                     Theme.of(context)
                                                         .colorScheme
@@ -208,7 +220,7 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                                 style: Theme.of(
                                                   context,
                                                 ).textTheme.bodySmall?.copyWith(
-                                                  fontSize: 10,
+                                                  fontSize: 12,
                                                   color:
                                                       Theme.of(context)
                                                           .colorScheme
@@ -224,7 +236,7 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                         );
                                       }).toList(),
                                 ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 10),
 
                               // Title
                               Text(
@@ -233,12 +245,12 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                   context,
                                 ).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                                  fontSize: 18,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 10),
 
                               // Reminder
                               if (reminder != null)
@@ -246,7 +258,7 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                   children: [
                                     Icon(
                                       Icons.alarm,
-                                      size: 16,
+                                      size: 18,
                                       color:
                                           reminder.isBefore(now)
                                               ? Theme.of(
@@ -265,7 +277,7 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                         style: Theme.of(
                                           context,
                                         ).textTheme.bodySmall?.copyWith(
-                                          fontSize: 12,
+                                          fontSize: 14,
                                           color:
                                               reminder.isBefore(now)
                                                   ? Theme.of(
@@ -280,7 +292,7 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                     ),
                                   ],
                                 ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 10),
 
                               // Content
                               if (note['contentJson'] != null)
@@ -294,27 +306,23 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                   style: Theme.of(
                                     context,
                                   ).textTheme.bodyMedium?.copyWith(
-                                    fontSize: 12,
-                                    color:
-                                        Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium?.color,
+                                    fontSize: 14,
                                     fontFamily: note['fontFamily'] ?? 'Roboto',
                                   ),
                                 ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 10),
 
                               // Image Preview
                               if (imagePaths.isNotEmpty)
                                 SizedBox(
-                                  height: 100,
+                                  height: 120,
                                   child: ListView.builder(
                                     scrollDirection: Axis.horizontal,
                                     itemCount: imagePaths.length,
                                     itemBuilder: (context, imgIndex) {
                                       return Padding(
                                         padding: const EdgeInsets.only(
-                                          right: 8.0,
+                                          right: 8,
                                         ),
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(
@@ -322,8 +330,8 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                           ),
                                           child: Image.file(
                                             File(imagePaths[imgIndex]),
-                                            width: 100,
-                                            height: 100,
+                                            width: 110,
+                                            height: 110,
                                             fit: BoxFit.cover,
                                           ),
                                         ),

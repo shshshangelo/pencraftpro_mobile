@@ -1,6 +1,16 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pencraftpro/services/SyncService.dart';
+
+Future<bool> isActuallyOnline() async {
+  try {
+    final result = await InternetAddress.lookup('google.com');
+    return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+  } catch (_) {
+    return false;
+  }
+}
 
 Future<void> showLogoutDialog(BuildContext context) async {
   final confirmed = await showDialog<bool>(
@@ -16,8 +26,16 @@ Future<void> showLogoutDialog(BuildContext context) async {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+              backgroundColor:
+                  Theme.of(
+                    context,
+                  ).colorScheme.secondary, // Use theme's secondary color
+              foregroundColor:
+                  Theme.of(
+                    context,
+                  ).colorScheme.onSecondary, // Use theme's onSecondary color
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              textStyle: const TextStyle(fontSize: 16),
             ),
             child: const Text('Logout'),
             onPressed: () => Navigator.pop(context, true),
@@ -28,8 +46,23 @@ Future<void> showLogoutDialog(BuildContext context) async {
   );
 
   if (confirmed == true) {
+    final online = await isActuallyOnline();
+    if (!online) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            '⚠️ You need to be online first before logging out.',
+          ),
+          backgroundColor:
+              Theme.of(context).colorScheme.error, // Use theme's error color
+        ),
+      );
+      return;
+    }
+
     await SyncService.clearLocalDataOnLogout();
     await FirebaseAuth.instance.signOut();
+
     if (context.mounted) {
       Navigator.of(context).pushNamedAndRemoveUntil(
         '/login',
@@ -37,9 +70,12 @@ Future<void> showLogoutDialog(BuildContext context) async {
         arguments: {'showWelcomeBack': true},
       );
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Logged out successfully.'),
-          backgroundColor: Colors.green,
+        SnackBar(
+          content: const Text('✅ Logged out successfully.'),
+          backgroundColor:
+              Theme.of(
+                context,
+              ).colorScheme.primary, // Use theme's primary color
         ),
       );
     }
