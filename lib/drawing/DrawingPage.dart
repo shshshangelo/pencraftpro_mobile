@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:ui' as ui;
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
@@ -227,57 +226,6 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
         _saveState();
       }
     });
-  }
-
-  Future<void> _saveDrawingToLocal() async {
-    try {
-      RenderRepaintBoundary boundary =
-          _globalKey.currentContext!.findRenderObject()
-              as RenderRepaintBoundary;
-      final image = await boundary.toImage(pixelRatio: 3.0);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      final pngBytes = byteData!.buffer.asUint8List();
-
-      final directory = await getApplicationDocumentsDirectory();
-      final fileName = 'drawing_${DateTime.now().millisecondsSinceEpoch}';
-      final filePath = '${directory.path}/$fileName.png';
-      final file = File(filePath);
-      await file.writeAsBytes(pngBytes);
-
-      // ✅ LOCAL SAVE - SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final savedDrawings = prefs.getStringList('saved_drawings') ?? [];
-      if (savedDrawings.length >= 100) {
-        savedDrawings.removeAt(0);
-      }
-      savedDrawings.add(
-        '$fileName|${DateTime.now().toIso8601String()}|${widget.customTitle ?? ''}',
-      );
-      await prefs.setStringList('saved_drawings', savedDrawings);
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('✅ Drawing saved locally.')));
-
-      // 🌐 FIRESTORE SAVE (only if online)
-      try {
-        final result = await InternetAddress.lookup('example.com');
-        if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
-          await FirebaseFirestore.instance.collection('drawings').add({
-            'title': widget.customTitle ?? 'Untitled Drawing',
-            'localPath': filePath,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-        }
-      } catch (e) {
-        debugPrint("Firestore skipped (offline): $e");
-      }
-    } catch (e) {
-      print('❌ Save failed: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('❌ Failed to save drawing: $e')));
-    }
   }
 
   Future<bool> _isAndroid13OrAbove() async {
@@ -637,6 +585,38 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
   }
 
   Color get _iconColor => Theme.of(context).colorScheme.onSurface;
+
+  Future<void> _saveDrawingToLocal() async {
+    try {
+      RenderRepaintBoundary boundary =
+          _globalKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      final pngBytes = byteData!.buffer.asUint8List();
+
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName = 'drawing_${DateTime.now().millisecondsSinceEpoch}';
+      final filePath = '${directory.path}/$fileName.png';
+      final file = File(filePath);
+      await file.writeAsBytes(pngBytes);
+
+      final prefs = await SharedPreferences.getInstance();
+      final savedDrawings = prefs.getStringList('saved_drawings') ?? [];
+      if (savedDrawings.length >= 100) {
+        savedDrawings.removeAt(0);
+      }
+      savedDrawings.add(
+        '$fileName|${DateTime.now().toIso8601String()}|${widget.customTitle ?? ''}',
+      );
+      await prefs.setStringList('saved_drawings', savedDrawings);
+    } catch (e) {
+      print('Save failed: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('❌ Failed to save drawing: $e')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

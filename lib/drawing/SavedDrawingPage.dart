@@ -22,24 +22,8 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
 
   Future<void> _loadSavedDrawings() async {
     final prefs = await SharedPreferences.getInstance();
-    final drawings = prefs.getStringList('saved_drawings') ?? [];
-
-    // Assign default titles if missing
-    for (int i = 0; i < drawings.length; i++) {
-      final parts = drawings[i].split('|');
-      while (parts.length < 3) {
-        parts.add('');
-      }
-      if (parts[2].trim().isEmpty) {
-        parts[2] = 'Drawing ${i + 1}';
-        drawings[i] = parts.join('|');
-      }
-    }
-
-    await prefs.setStringList('saved_drawings', drawings);
-
     setState(() {
-      _savedDrawings = drawings;
+      _savedDrawings = prefs.getStringList('saved_drawings') ?? [];
     });
   }
 
@@ -136,19 +120,6 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
       }
       drawingData[2] = newTitle;
 
-      final path = await _getImagePath(drawingData[0]);
-      final file = File(path);
-      if (await file.exists()) {
-        final image = await decodeImageFromList(await file.readAsBytes());
-        drawingData[3] =
-            ((MediaQuery.of(context).size.width - image.width * 0.6) / 2)
-                .toString();
-        drawingData[4] =
-            ((MediaQuery.of(context).size.height - image.height * 0.6) / 2)
-                .toString();
-        drawingData[5] = (0.6).toString();
-      }
-
       _savedDrawings[index] = drawingData.join('|');
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('saved_drawings', _savedDrawings);
@@ -197,6 +168,18 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                           final dateTime = DateTime.parse(drawingData[1]);
                           final title =
                               drawingData.length > 2 ? drawingData[2] : '';
+                          final offsetX =
+                              drawingData.length > 3
+                                  ? double.tryParse(drawingData[3]) ?? 0
+                                  : 0;
+                          final offsetY =
+                              drawingData.length > 4
+                                  ? double.tryParse(drawingData[4]) ?? 0
+                                  : 0;
+                          final scale =
+                              drawingData.length > 5
+                                  ? double.tryParse(drawingData[5]) ?? 1.0
+                                  : 1.0;
 
                           return FutureBuilder<String>(
                             future: _getImagePath(fileName),
@@ -212,7 +195,7 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                                       MaterialPageRoute(
                                         builder:
                                             (_) => DrawingCanvasPage(
-                                              loadedImage: File(path),
+                                              loadedImage: File(path!),
                                               customTitle: title,
                                             ),
                                       ),
@@ -247,7 +230,7 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                                                             8,
                                                           ),
                                                       child: Image.file(
-                                                        File(path),
+                                                        File(path!),
                                                         fit: BoxFit.cover,
                                                       ),
                                                     )
