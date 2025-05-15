@@ -30,6 +30,7 @@ import 'drawing/DrawingPage.dart';
 import 'drawing/SavedDrawingPage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:easy_localization/easy_localization.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,29 +43,32 @@ void main() async {
     debugPrint('Failed to initialize Firebase: $e');
   }
 
-  // Initialize timezone and set to Asia/Manila
-  try {
-    tz.initializeTimeZones();
-    tz.setLocalLocation(tz.getLocation('Asia/Manila'));
-    debugPrint('Timezone set to Asia/Manila');
-  } catch (e) {
-    debugPrint('Failed to initialize timezone: $e');
-  }
+  await EasyLocalization.ensureInitialized();
+
+  // Initialize timezone data
+  tz.initializeTimeZones();
+  tz.setLocalLocation(tz.getLocation('UTC')); // Default to UTC timezone
 
   // Initialize notifications
-  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-  const initializationSettingsAndroid = AndroidInitializationSettings(
-    '@mipmap/ic_launcher',
-  );
-  const initializationSettings = InitializationSettings(
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  const AndroidInitializationSettings initializationSettingsAndroid =
+      AndroidInitializationSettings('@mipmap/ic_launcher');
+
+  const InitializationSettings initializationSettings = InitializationSettings(
     android: initializationSettingsAndroid,
   );
-  try {
-    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
-    debugPrint('FlutterLocalNotifications initialized');
-  } catch (e) {
-    debugPrint('Failed to initialize notifications: $e');
-  }
+
+  await flutterLocalNotificationsPlugin.initialize(
+    initializationSettings,
+    onDidReceiveNotificationResponse: (details) {
+      debugPrint('📱 Notification clicked: ${details.payload}');
+    },
+  );
+
+  // Request notification permissions
+  await Permission.notification.request();
 
   // Check notification and battery optimization permissions (Android only)
   if (Platform.isAndroid) {
@@ -87,7 +91,14 @@ void main() async {
     }
   }
 
-  runApp(const MyApp());
+  runApp(
+    EasyLocalization(
+      supportedLocales: const [Locale('en', 'US')],
+      path: 'assets/translations',
+      fallbackLocale: const Locale('en', 'US'),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {

@@ -114,6 +114,8 @@ class _AddNotePageState extends State<AddNotePage> {
   bool _isPlaying = false;
   String? _selectedFolderId;
   String? _selectedFolderName;
+  // Add new list to track element order
+  final List<Map<String, dynamic>> _elementOrder = [];
 
   final List<Color> _folderColors = [
     Colors.red,
@@ -142,10 +144,13 @@ class _AddNotePageState extends State<AddNotePage> {
   int _historyIndex = -1;
   List<Map<String, dynamic>> _checklistItems = [];
 
-  @override
+  // Track the initial state of the note for change detection
+  Map<String, dynamic>? _initialNoteState;
+
   @override
   void initState() {
     super.initState();
+    _initializeNotifications();
 
     _titleController.text = widget.title ?? '';
     _isPinned = widget.isPinned;
@@ -154,6 +159,31 @@ class _AddNotePageState extends State<AddNotePage> {
     _voiceNotePath = widget.voiceNote;
     _labels = widget.labels?.toList() ?? [];
     _isArchived = widget.isArchived;
+
+    // Initialize element order with existing elements in reverse order
+    // First add images (they should be at the bottom)
+    if (widget.imagePaths != null) {
+      for (var path in widget.imagePaths!) {
+        _elementOrder.add({'type': 'image', 'path': path});
+      }
+    }
+    // Then add voice note (it should be above images)
+    if (widget.voiceNote != null) {
+      _elementOrder.insert(0, {'type': 'voice', 'path': widget.voiceNote});
+    }
+    // Finally add checklist items (they should be at the top)
+    if (widget.contentJson != null) {
+      for (var item in widget.contentJson!) {
+        if (item['checklistItems'] != null) {
+          final checklistItems = List<Map<String, dynamic>>.from(
+            item['checklistItems'],
+          );
+          for (var i = 0; i < checklistItems.length; i++) {
+            _elementOrder.insert(0, {'type': 'checklist', 'index': i});
+          }
+        }
+      }
+    }
 
     if (widget.noteId != null && widget.folderId != null) {
       _loadFolderName(widget.folderId!);
@@ -229,6 +259,9 @@ class _AddNotePageState extends State<AddNotePage> {
     if (widget.noteId != null) {
       _fetchCollaboratorsFromFirestore();
     }
+
+    // Store the initial state after all fields are loaded
+    _initialNoteState = _getCurrentNoteState();
   }
 
   Future<void> _fetchCollaboratorsFromFirestore() async {
@@ -328,20 +361,14 @@ class _AddNotePageState extends State<AddNotePage> {
         throw Exception('No authenticated user found.');
       }
 
-      final noteRef = FirebaseFirestore.instance
-          .collection('notes')
-          .doc(noteId);
-      final snapshot = await noteRef.get();
-      final existingData = snapshot.data();
-
-      final existingCollaborators = List<String>.from(
-        existingData?['collaborators'] ?? [currentUser.uid],
-      );
-      final existingCollaboratorEmails = List<String>.from(
-        existingData?['collaboratorEmails'] ?? _collaboratorEmails,
-      );
+      // Save to local storage first
+      final prefs = await SharedPreferences.getInstance();
+      final String? notesString = prefs.getString('notes');
+      final List<dynamic> notes =
+          notesString != null ? jsonDecode(notesString) : [];
 
       final noteData = {
+        'id': noteId,
         'title': _titleController.text.trim(),
         'contentJson': [
           {
@@ -370,22 +397,34 @@ class _AddNotePageState extends State<AddNotePage> {
                 : null,
         'owner': currentUser.uid,
         'ownerEmail': currentUser.email ?? 'no-email',
-        'collaborators': existingCollaborators,
-        'collaboratorEmails': existingCollaboratorEmails,
-        'createdAt': existingData?['createdAt'] ?? FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
+        'collaborators': [currentUser.uid],
+        'collaboratorEmails': _collaboratorEmails,
+        'createdAt': DateTime.now().toIso8601String(),
+        'updatedAt': DateTime.now().toIso8601String(),
       };
 
+      // Update local storage
+      final existingIndex = notes.indexWhere((note) => note['id'] == noteId);
+      if (existingIndex != -1) {
+        notes[existingIndex] = noteData;
+      } else {
+        notes.add(noteData);
+      }
+      await prefs.setString('notes', jsonEncode(notes));
+
+      // Try to save to Firestore (will be queued if offline)
+      final noteRef = FirebaseFirestore.instance
+          .collection('notes')
+          .doc(noteId);
       await noteRef.set(noteData, SetOptions(merge: true));
 
-      debugPrint(
-        '✅ Note saved to Firestore: $noteId with collaboratorEmails: $_collaboratorEmails',
-      );
+      debugPrint('✅ Note saved locally and queued for Firestore sync: $noteId');
 
       widget.onSave(
         id: noteId,
-        title: noteData['title'],
-        contentJson: noteData['contentJson'],
+        title: noteData['title'] as String,
+        contentJson:
+            (noteData['contentJson'] as List).cast<Map<String, dynamic>>(),
         isPinned: _isPinned,
         isDeleted: false,
         reminder: _reminder,
@@ -395,59 +434,37 @@ class _AddNotePageState extends State<AddNotePage> {
         isArchived: _isArchived,
         fontFamily: _selectedFontFamily,
         folderId: _selectedFolderId,
-        folderColor: noteData['folderColor'],
+        folderColor: noteData['folderColor'] as int?,
         collaboratorEmails: _collaboratorEmails,
       );
     } catch (e) {
-      debugPrint('❌ Failed to save note to Firestore: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to save note: $e')));
-      }
+      debugPrint('⚠️ Note saved locally but Firestore sync pending: $e');
+      // Don't show error to user since we saved locally
     }
   }
 
   void _saveNote() {
-    final List<Map<String, dynamic>> cleanedChecklistItems =
-        _checklistItems
-            .where(
-              (item) => (item['text'] as String?)?.trim().isNotEmpty ?? false,
-            )
-            .toList();
+    // Check if the note is empty
+    final isEmpty =
+        _titleController.text.trim().isEmpty &&
+        _contentController.text.trim().isEmpty &&
+        _imagePaths.isEmpty &&
+        _voiceNotePath == null &&
+        _checklistItems.every(
+          (item) =>
+              (item['text'] as String?)?.trim().isEmpty ??
+              true && item['checked'] == false,
+        );
 
-    final List<Map<String, dynamic>> contentJson = [
-      {
-        'text': _contentController.text,
-        'bold': _selectedFontWeight == FontWeight.bold,
-        'italic': _isItalic,
-        'underline': _isUnderline,
-        'strikethrough': _isStrikethrough,
-        'fontFamily': _selectedFontFamily,
-        'fontSize': _contentFontSize,
-        'checklistItems': cleanedChecklistItems,
-      },
-    ];
-
-    widget.onSave(
-      id: widget.noteId,
-      title: _titleController.text.trim(),
-      contentJson: contentJson,
-      isPinned: _isPinned,
-      isDeleted: false,
-      reminder: _reminder,
-      imagePaths: _imagePaths,
-      voiceNote: _voiceNotePath,
-      labels: _labels,
-      isArchived: _isArchived,
-      fontFamily: _selectedFontFamily,
-      folderId: _selectedFolderId,
-      folderColor:
-          _selectedFolderId != null
-              ? _folderColorMap[_selectedFolderId]?.value
-              : null,
-      collaboratorEmails: _collaboratorEmails,
-    );
+    if (isEmpty) {
+      Navigator.pop(context, {
+        'id': widget.noteId,
+        'isNew': false,
+        'delete': false,
+        'updated': false,
+      });
+      return;
+    }
 
     _saveNoteToFirestore();
 
@@ -456,6 +473,7 @@ class _AddNotePageState extends State<AddNotePage> {
       'id': widget.noteId,
       'isNew': widget.noteId == null,
       'delete': false,
+      'updated': widget.noteId != null,
     });
   }
 
@@ -523,6 +541,11 @@ class _AddNotePageState extends State<AddNotePage> {
   void _addChecklistItem() {
     setState(() {
       _checklistItems.add({'text': '', 'checked': false});
+      // Add to element order at the beginning
+      _elementOrder.insert(0, {
+        'type': 'checklist',
+        'index': _checklistItems.length - 1,
+      });
     });
   }
 
@@ -580,7 +603,7 @@ class _AddNotePageState extends State<AddNotePage> {
       _selectedFolderName = matchedFolder.name;
     });
 
-    await _saveNotesToPrefs();
+    await _saveNoteToFirestore();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Moved note to folder: ${matchedFolder.name}')),
@@ -654,224 +677,136 @@ class _AddNotePageState extends State<AddNotePage> {
   }
 
   Future<void> _scheduleNotification(DateTime dateTime) async {
-    final notificationPermission = await Permission.notification.request();
+    try {
+      final notificationPermission = await Permission.notification.request();
+      debugPrint('📱 Notification permission status: $notificationPermission');
 
-    if (!notificationPermission.isGranted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Notification permission denied'),
-          backgroundColor: Colors.red,
-          action:
-              notificationPermission.isPermanentlyDenied
-                  ? SnackBarAction(
-                    label: 'Settings',
-                    textColor: Colors.white,
-                    onPressed: openAppSettings,
-                  )
-                  : null,
-        ),
-      );
-      return;
-    }
+      if (!notificationPermission.isGranted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Notification permission denied'),
+            backgroundColor: Colors.red,
+            action:
+                notificationPermission.isPermanentlyDenied
+                    ? SnackBarAction(
+                      label: 'Settings',
+                      textColor: Colors.white,
+                      onPressed: openAppSettings,
+                    )
+                    : null,
+          ),
+        );
+        return;
+      }
 
-    final androidInfo = await DeviceInfoPlugin().androidInfo;
-    final isAndroid12OrHigher = androidInfo.version.sdkInt >= 31;
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      final isAndroid12OrHigher = androidInfo.version.sdkInt >= 31;
+      debugPrint('📱 Android SDK version: ${androidInfo.version.sdkInt}');
 
-    if (isAndroid12OrHigher) {
-      final scheduleExactAlarmStatus =
-          await Permission.scheduleExactAlarm.request();
-      if (!scheduleExactAlarmStatus.isGranted) {
+      if (isAndroid12OrHigher) {
+        final scheduleExactAlarmStatus =
+            await Permission.scheduleExactAlarm.request();
+        debugPrint(
+          '⏰ Schedule exact alarm permission status: $scheduleExactAlarmStatus',
+        );
+
+        if (!scheduleExactAlarmStatus.isGranted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Exact Alarm permission denied. Cannot schedule notification.',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+      }
+
+      // Convert to TZDateTime and validate
+      final scheduledDate = tz.TZDateTime.from(dateTime, tz.local);
+      final now = tz.TZDateTime.now(tz.local);
+      debugPrint('⏰ Current time: $now');
+      debugPrint('⏰ Scheduled time: $scheduledDate');
+
+      if (scheduledDate.isBefore(now)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'Exact Alarm permission denied. Cannot schedule notification.',
-            ),
+            content: Text('Cannot schedule notification for past time'),
             backgroundColor: Colors.red,
           ),
         );
         return;
       }
-    }
 
-    try {
+      // Create notification details
+      const androidDetails = AndroidNotificationDetails(
+        'note_reminder',
+        'Note Reminders',
+        channelDescription: 'Notifications for note reminders',
+        importance: Importance.max,
+        priority: Priority.high,
+        enableVibration: true,
+        playSound: true,
+        category: AndroidNotificationCategory.reminder,
+        visibility: NotificationVisibility.public,
+      );
+
+      const notificationDetails = NotificationDetails(android: androidDetails);
+
+      // Schedule the notification
       await _notificationsPlugin.zonedSchedule(
         _notificationIdCounter++,
         'Note Reminder',
         _titleController.text.isNotEmpty
             ? _titleController.text
             : 'Untitled Note',
-        tz.TZDateTime.from(dateTime, tz.local),
-        const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'note_reminder',
-            'Note Reminders',
-            channelDescription: 'Notifications for note reminders',
-            importance: Importance.max,
-            priority: Priority.high,
-          ),
-        ),
+        scheduledDate,
+        notificationDetails,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.dateAndTime,
         payload: 'Reminder Notification',
       );
-    } catch (e) {
+
+      debugPrint('✅ Notification scheduled successfully for $scheduledDate');
+
+      // Save notification ID for later reference
+      final prefs = await SharedPreferences.getInstance();
+      final notificationIds = prefs.getStringList('notification_ids') ?? [];
+      notificationIds.add(_notificationIdCounter.toString());
+      await prefs.setStringList('notification_ids', notificationIds);
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error scheduling notification: $e');
+      debugPrint('Stack trace: $stackTrace');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to schedule notification: $e'),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
         ),
       );
     }
   }
 
-  void _setOrRemoveReminder() async {
-    if (_reminder == null) {
-      _setReminder();
-    } else {
-      final action = await showDialog<bool>(
-        context: context,
-        builder:
-            (ctx) => AlertDialog(
-              title: const Text('Remove or Edit Reminder'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Would you like to remove or edit the current reminder?',
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () async {
-                      final removeConfirm = await showDialog<bool>(
-                        context: ctx,
-                        builder:
-                            (ctx2) => AlertDialog(
-                              title: const Text('Confirm Removal'),
-                              content: const Text(
-                                'Are you sure you want to delete this reminder?',
-                              ),
-                              actions: [
-                                TextButton(
-                                  child: const Text('No'),
-                                  onPressed: () => Navigator.pop(ctx2, false),
-                                ),
-                                ElevatedButton(
-                                  child: const Text('Yes, remove'),
-                                  onPressed: () => Navigator.pop(ctx2, true),
-                                ),
-                              ],
-                            ),
-                      );
+  // Add this method to initialize notifications
+  Future<void> _initializeNotifications() async {
+    try {
+      const androidSettings = AndroidInitializationSettings(
+        '@mipmap/ic_launcher',
+      );
+      const initSettings = InitializationSettings(android: androidSettings);
 
-                      if (removeConfirm == true) {
-                        setState(() {
-                          _reminder = null;
-                        });
-                        Navigator.pop(ctx, true);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Reminder removed.'),
-                            backgroundColor: Colors.black,
-                          ),
-                        );
-                      }
-                    },
-                    child: const Text(
-                      'Remove Reminder',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                    ),
-                    onPressed: () {
-                      Navigator.pop(ctx, true);
-                      _setReminder();
-                    },
-                    child: const Text(
-                      'Edit Reminder',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  child: const Text('Cancel'),
-                  onPressed: () => Navigator.pop(ctx, false),
-                ),
-              ],
-            ),
+      final initialized = await _notificationsPlugin.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: (details) {
+          debugPrint('📱 Notification clicked: ${details.payload}');
+        },
       );
 
-      if (action == true) {
-        _saveNotesToPrefs();
-      }
+      debugPrint('📱 Notifications initialized: $initialized');
+    } catch (e) {
+      debugPrint('❌ Error initializing notifications: $e');
     }
-  }
-
-  Future<void> _saveNotesToPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? notesString = prefs.getString('notes');
-    List<dynamic> notes = [];
-
-    if (notesString != null) {
-      notes = jsonDecode(notesString);
-    }
-
-    final List<Map<String, dynamic>> cleanedChecklistItems =
-        _checklistItems
-            .where(
-              (item) => (item['text'] as String?)?.trim().isNotEmpty ?? false,
-            )
-            .toList();
-
-    final updatedNote = {
-      'id': widget.noteId,
-      'title': _titleController.text.trim(),
-      'contentJson': [
-        {
-          'text': _contentController.text,
-          'bold': _selectedFontWeight == FontWeight.bold,
-          'italic': _isItalic,
-          'underline': _isUnderline,
-          'strikethrough': _isStrikethrough,
-          'fontFamily': _selectedFontFamily,
-          'fontSize': _contentFontSize,
-          'checklistItems': cleanedChecklistItems,
-        },
-      ],
-      'isPinned': _isPinned,
-      'isDeleted': false,
-      'reminder': _reminder?.toIso8601String(),
-      'imagePaths': _imagePaths,
-      'voiceNote': _voiceNotePath,
-      'labels': _labels,
-      'isArchived': _isArchived,
-      'fontFamily': _selectedFontFamily,
-      'folderId': _selectedFolderId,
-      'folderColor':
-          _selectedFolderId != null
-              ? _folderColorMap[_selectedFolderId]?.value
-              : null,
-      'collaboratorEmails': _collaboratorEmails,
-    };
-
-    if (widget.noteId != null) {
-      final index = notes.indexWhere((note) => note['id'] == widget.noteId);
-      if (index != -1) {
-        notes[index] = updatedNote;
-      } else {
-        notes.add(updatedNote);
-      }
-    } else {
-      notes.add(updatedNote);
-    }
-
-    await prefs.setString('notes', jsonEncode(notes));
   }
 
   void _showImageOptions() {
@@ -938,6 +873,8 @@ class _AddNotePageState extends State<AddNotePage> {
     if (image != null) {
       setState(() {
         _imagePaths.add(image.path);
+        // Add to element order at the beginning
+        _elementOrder.insert(0, {'type': 'image', 'path': image.path});
       });
     }
   }
@@ -956,6 +893,8 @@ class _AddNotePageState extends State<AddNotePage> {
       if (image != null) {
         setState(() {
           _imagePaths.add(image.path);
+          // Add to element order at the beginning
+          _elementOrder.insert(0, {'type': 'image', 'path': image.path});
         });
       }
     } else if (galleryPermission.isPermanentlyDenied) {
@@ -1111,6 +1050,8 @@ class _AddNotePageState extends State<AddNotePage> {
       if (await File(path).exists()) {
         setState(() {
           _voiceNotePath = path;
+          // Add to element order at the beginning
+          _elementOrder.insert(0, {'type': 'voice', 'path': path});
           if (_titleController.text.trim().isEmpty) {
             _titleController.text = 'Voice Note $_voiceNoteCounter';
             _voiceNoteCounter++;
@@ -2226,7 +2167,7 @@ class _AddNotePageState extends State<AddNotePage> {
                                                 _selectedFolderName =
                                                     folder.name;
                                               });
-                                              await _saveNotesToPrefs();
+                                              await _saveNoteToFirestore();
                                               Navigator.pop(context);
                                             },
                                           );
@@ -2291,19 +2232,61 @@ class _AddNotePageState extends State<AddNotePage> {
     );
   }
 
-  Future<bool> _onWillPop() async {
-    final isEmpty =
-        _titleController.text.trim().isEmpty &&
-        _contentController.text.trim().isEmpty &&
-        _imagePaths.isEmpty &&
-        _voiceNotePath == null &&
-        _checklistItems.every(
-          (item) =>
-              (item['text'] as String).trim().isEmpty &&
-              item['checked'] == false,
-        );
+  // Helper to get the current note state for comparison
+  Map<String, dynamic> _getCurrentNoteState() {
+    return {
+      'title': _titleController.text.trim(),
+      'content': _contentController.text.trim(),
+      'imagePaths': List<String>.from(_imagePaths),
+      'voiceNotePath': _voiceNotePath,
+      'checklistItems':
+          _checklistItems
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList(),
+      'isPinned': _isPinned,
+      'reminder': _reminder?.toIso8601String(),
+      'labels': List<String>.from(_labels),
+      'isArchived': _isArchived,
+      'fontFamily': _selectedFontFamily,
+      'folderId': _selectedFolderId,
+      'folderColor':
+          _selectedFolderId != null
+              ? _folderColorMap[_selectedFolderId]?.value
+              : null,
+      'collaboratorEmails': List<String>.from(_collaboratorEmails),
+    };
+  }
 
-    if (isEmpty) return true;
+  // Helper to check if the note has changed from its initial state
+  bool _hasNoteChanged() {
+    if (_initialNoteState == null) return false;
+    final current = _getCurrentNoteState();
+    // Deep compare all fields
+    return !_deepEquals(_initialNoteState!, current);
+  }
+
+  // Deep equality check for maps/lists
+  bool _deepEquals(dynamic a, dynamic b) {
+    if (a is Map && b is Map) {
+      if (a.length != b.length) return false;
+      for (final key in a.keys) {
+        if (!b.containsKey(key) || !_deepEquals(a[key], b[key])) return false;
+      }
+      return true;
+    } else if (a is List && b is List) {
+      if (a.length != b.length) return false;
+      for (int i = 0; i < a.length; i++) {
+        if (!_deepEquals(a[i], b[i])) return false;
+      }
+      return true;
+    } else {
+      return a == b;
+    }
+  }
+
+  Future<bool> _onWillPop() async {
+    // Only show dialog if the note has actually changed
+    if (!_hasNoteChanged()) return true;
 
     final shouldExit =
         await showDialog<bool>(
@@ -2361,6 +2344,35 @@ class _AddNotePageState extends State<AddNotePage> {
               icon: Icon(_isPinned ? Icons.push_pin : Icons.push_pin_outlined),
               onPressed: () {
                 setState(() => _isPinned = !_isPinned);
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(
+                          _isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _isPinned ? 'Note pinned' : 'Note unpinned',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onPrimary,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    duration: const Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    margin: const EdgeInsets.all(8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                );
               },
             ),
             IconButton(
@@ -2430,35 +2442,94 @@ class _AddNotePageState extends State<AddNotePage> {
                     ),
                     if (_reminder != null)
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.alarm, size: 16, color: Colors.grey[600]),
-                          const SizedBox(width: 4),
                           Expanded(
-                            child: RichText(
-                              text: TextSpan(
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  color: Colors.blue[600],
-                                ),
+                            child: GestureDetector(
+                              onTap:
+                                  _setReminder, // Tap text/icon to edit reminder
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  TextSpan(
-                                    text: '',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                  Icon(
+                                    Icons.alarm,
+                                    size: 16,
+                                    color: Colors.grey[600],
                                   ),
-                                  TextSpan(
-                                    text: DateFormat(
-                                      'MMM dd, yyyy hh:mm a',
-                                    ).format(_reminder!),
-                                    style: TextStyle(
-                                      fontStyle: FontStyle.italic,
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: RichText(
+                                      text: TextSpan(
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          color: Colors.blue[600],
+                                        ),
+                                        children: [
+                                          TextSpan(
+                                            text: DateFormat(
+                                              'MMM dd, yyyy hh:mm a',
+                                            ).format(_reminder!),
+                                            style: TextStyle(
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.close,
+                              size: 18,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.7),
+                            ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            tooltip: 'Remove Reminder',
+                            onPressed: () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder:
+                                    (ctx) => AlertDialog(
+                                      title: const Text('Remove Reminder?'),
+                                      content: const Text(
+                                        'Are you sure you want to remove this reminder?',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          child: const Text('No'),
+                                          onPressed:
+                                              () => Navigator.pop(ctx, false),
+                                        ),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red,
+                                          ),
+                                          child: const Text('Remove'),
+                                          onPressed:
+                                              () => Navigator.pop(ctx, true),
+                                        ),
+                                      ],
+                                    ),
+                              );
+                              if (confirm == true) {
+                                setState(() {
+                                  _reminder = null;
+                                });
+                                await _saveNoteToFirestore();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Reminder removed.'),
+                                    backgroundColor: Colors.black,
+                                  ),
+                                );
+                              }
+                            },
                           ),
                         ],
                       ),
@@ -2478,10 +2549,55 @@ class _AddNotePageState extends State<AddNotePage> {
                                 : Colors.blue,
                       ),
                       label: Text(_selectedFolderName!),
-                      backgroundColor: Colors.grey[200],
+                      backgroundColor: Colors.blue.withOpacity(0.15),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
+                      deleteIcon: const Icon(Icons.close, size: 18),
+                      deleteIconColor: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withOpacity(0.7),
+                      onDeleted: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder:
+                              (context) => AlertDialog(
+                                title: const Text('Remove Folder?'),
+                                content: Text(
+                                  'Are you sure you want to remove this note from the folder "$_selectedFolderName"?',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed:
+                                        () => Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                    ),
+                                    onPressed:
+                                        () => Navigator.pop(context, true),
+                                    child: const Text('Remove'),
+                                  ),
+                                ],
+                              ),
+                        );
+
+                        if (confirm == true) {
+                          setState(() {
+                            _selectedFolderId = null;
+                            _selectedFolderName = null;
+                          });
+                          await _saveNoteToFirestore();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Folder removed from note.'),
+                              backgroundColor: Colors.black,
+                            ),
+                          );
+                        }
+                      },
                     ),
                   ),
                 if (_labels.isNotEmpty)
@@ -2584,8 +2700,11 @@ class _AddNotePageState extends State<AddNotePage> {
                                           child: Chip(
                                             label: Text(
                                               label,
-                                              style: const TextStyle(
-                                                color: Colors.black87,
+                                              style: TextStyle(
+                                                color:
+                                                    Theme.of(
+                                                      context,
+                                                    ).colorScheme.onSurface,
                                               ),
                                             ),
                                             backgroundColor: Colors.blue
@@ -2597,8 +2716,11 @@ class _AddNotePageState extends State<AddNotePage> {
                                             deleteIcon: const Icon(
                                               Icons.close,
                                               size: 18,
-                                              color: Colors.black54,
                                             ),
+                                            deleteIconColor: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.7),
                                             onDeleted: () async {
                                               final confirm = await showDialog<
                                                 bool
@@ -2697,156 +2819,212 @@ class _AddNotePageState extends State<AddNotePage> {
                     setState(() {});
                   },
                 ),
-                if (_imagePaths.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Column(
-                      children:
-                          _imagePaths.map((path) {
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 8.0),
-                              child: Stack(
-                                children: [
-                                  GestureDetector(
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder:
-                                              (_) => FullScreenGallery(
-                                                imagePaths: _imagePaths,
-                                                initialIndex: _imagePaths
-                                                    .indexOf(path),
-                                              ),
-                                        ),
-                                      );
-                                    },
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: Image.file(
-                                        File(path),
-                                        width: double.infinity,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    top: 8,
-                                    right: 8,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withOpacity(0.5),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: IconButton(
-                                        icon: const Icon(
-                                          Icons.close,
-                                          size: 20,
-                                          color: Colors.white,
-                                        ),
-                                        onPressed: () async {
-                                          final confirm = await showDialog<
-                                            bool
-                                          >(
-                                            context: context,
-                                            builder:
-                                                (context) => AlertDialog(
-                                                  title: const Text(
-                                                    'Delete Image?',
-                                                  ),
-                                                  content: const Text(
-                                                    'Are you sure you want to remove this image?',
-                                                  ),
-                                                  actions: [
-                                                    TextButton(
-                                                      child: const Text(
-                                                        'Cancel',
-                                                      ),
-                                                      onPressed:
-                                                          () => Navigator.of(
-                                                            context,
-                                                          ).pop(false),
-                                                    ),
-                                                    ElevatedButton(
-                                                      style:
-                                                          ElevatedButton.styleFrom(
-                                                            backgroundColor:
-                                                                Colors.red,
-                                                          ),
-                                                      child: const Text(
-                                                        'Delete',
-                                                      ),
-                                                      onPressed:
-                                                          () => Navigator.of(
-                                                            context,
-                                                          ).pop(true),
-                                                    ),
-                                                  ],
-                                                ),
-                                          );
-
-                                          if (confirm == true) {
-                                            setState(() {
-                                              _imagePaths.remove(path);
-                                            });
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                    ),
-                  ),
-                if (_voiceNotePath != null) _buildVoiceNotePlayer(),
                 const SizedBox(height: 16),
-                if (_checklistItems.isNotEmpty)
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: NeverScrollableScrollPhysics(),
-                    itemCount: _checklistItems.length,
-                    itemBuilder: (context, index) {
-                      return ListTile(
-                        leading: Checkbox(
-                          value: _checklistItems[index]['checked'],
-                          onChanged: (bool? value) {
-                            setState(() {
-                              _checklistItems[index]['checked'] = value!;
-                            });
-                          },
-                        ),
-                        title: TextFormField(
-                          initialValue: _checklistItems[index]['text'],
-                          onChanged: (text) {
-                            setState(() {
-                              _checklistItems[index]['text'] = text;
-                            });
-                          },
-                          decoration: const InputDecoration(
-                            hintText: 'Enter task',
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(vertical: 5.0),
-                          ),
-                          textAlign: TextAlign.left,
-                          textDirection: TextDirection.ltr,
-                          style: TextStyle(
-                            fontSize: _contentFontSize,
-                            fontFamily: _selectedFontFamily,
-                            fontWeight: _selectedFontWeight,
-                            fontStyle:
-                                _isItalic ? FontStyle.italic : FontStyle.normal,
-                            decoration: TextDecoration.combine([
-                              if (_checklistItems[index]['checked'])
-                                TextDecoration.lineThrough,
-                              if (_isUnderline) TextDecoration.underline,
-                            ]),
-                          ),
+                // Render elements in order (newest first)
+                ..._elementOrder.map((element) {
+                  switch (element['type']) {
+                    case 'image':
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Stack(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) => FullScreenGallery(
+                                          imagePaths: _imagePaths,
+                                          initialIndex: _imagePaths.indexOf(
+                                            element['path'],
+                                          ),
+                                        ),
+                                  ),
+                                );
+                              },
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.file(
+                                  File(element['path']),
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.5),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(
+                                    Icons.close,
+                                    size: 20,
+                                    color: Colors.white,
+                                  ),
+                                  onPressed: () async {
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder:
+                                          (context) => AlertDialog(
+                                            title: const Text('Delete Image?'),
+                                            content: const Text(
+                                              'Are you sure you want to remove this image?',
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                child: const Text('Cancel'),
+                                                onPressed:
+                                                    () => Navigator.of(
+                                                      context,
+                                                    ).pop(false),
+                                              ),
+                                              ElevatedButton(
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                                child: const Text('Delete'),
+                                                onPressed:
+                                                    () => Navigator.of(
+                                                      context,
+                                                    ).pop(true),
+                                              ),
+                                            ],
+                                          ),
+                                    );
+
+                                    if (confirm == true) {
+                                      setState(() {
+                                        _imagePaths.remove(element['path']);
+                                        _elementOrder.remove(element);
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       );
-                    },
-                  ),
+                    case 'voice':
+                      return _buildVoiceNotePlayer();
+                    case 'checklist':
+                      final index = element['index'];
+                      if (index < _checklistItems.length) {
+                        return ListTile(
+                          leading: Checkbox(
+                            value: _checklistItems[index]['checked'],
+                            onChanged: (bool? value) {
+                              setState(() {
+                                _checklistItems[index]['checked'] = value!;
+                              });
+                            },
+                          ),
+                          title: TextFormField(
+                            initialValue: _checklistItems[index]['text'],
+                            onChanged: (text) {
+                              setState(() {
+                                _checklistItems[index]['text'] = text;
+                              });
+                            },
+                            decoration: const InputDecoration(
+                              hintText: 'Enter task',
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(
+                                vertical: 5.0,
+                              ),
+                            ),
+                            textAlign: TextAlign.left,
+                            textDirection: TextDirection.ltr,
+                            style: TextStyle(
+                              fontSize: _contentFontSize,
+                              fontFamily: _selectedFontFamily,
+                              fontWeight: _selectedFontWeight,
+                              fontStyle:
+                                  _isItalic
+                                      ? FontStyle.italic
+                                      : FontStyle.normal,
+                              decoration: TextDecoration.combine([
+                                if (_checklistItems[index]['checked'])
+                                  TextDecoration.lineThrough,
+                                if (_isUnderline) TextDecoration.underline,
+                              ]),
+                            ),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.red,
+                            ),
+                            onPressed: () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder:
+                                    (context) => AlertDialog(
+                                      title: const Text(
+                                        'Delete Checklist Item',
+                                      ),
+                                      content: const Text(
+                                        'Are you sure you want to delete this item?',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed:
+                                              () =>
+                                                  Navigator.pop(context, false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red,
+                                          ),
+                                          onPressed:
+                                              () =>
+                                                  Navigator.pop(context, true),
+                                          child: const Text('Delete'),
+                                        ),
+                                      ],
+                                    ),
+                              );
+
+                              if (confirm == true) {
+                                setState(() {
+                                  _checklistItems.removeAt(index);
+                                  _elementOrder.remove(element);
+                                  // Update indices of remaining checklist items
+                                  for (
+                                    var i = 0;
+                                    i < _elementOrder.length;
+                                    i++
+                                  ) {
+                                    if (_elementOrder[i]['type'] ==
+                                            'checklist' &&
+                                        _elementOrder[i]['index'] > index) {
+                                      _elementOrder[i]['index']--;
+                                    }
+                                  }
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Checklist item deleted'),
+                                    backgroundColor: Colors.black,
+                                  ),
+                                );
+                                await _saveNoteToFirestore();
+                              }
+                            },
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    default:
+                      return const SizedBox.shrink();
+                  }
+                }),
               ],
             ),
           ),
@@ -3079,11 +3257,8 @@ class _AddNotePageState extends State<AddNotePage> {
                   Flexible(
                     child: IconButton(
                       icon: const Icon(Icons.alarm),
-                      onPressed: _setOrRemoveReminder,
-                      tooltip:
-                          _reminder == null
-                              ? 'Set Reminder'
-                              : 'Edit/Remove Reminder',
+                      onPressed: _setReminder,
+                      tooltip: 'Set/Edit Reminder',
                     ),
                   ),
                   Flexible(

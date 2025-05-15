@@ -263,7 +263,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Storage or Photos permission denied')),
+          const SnackBar(content: Text('Storage or Photos permission denied.')),
         );
       }
       return;
@@ -352,7 +352,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Photo library permission denied')),
+          const SnackBar(content: Text('Photo library permission denied.')),
         );
       }
     } catch (e) {
@@ -400,7 +400,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera permission denied')),
+          const SnackBar(content: Text('Camera permission denied.')),
         );
       }
     } catch (e) {
@@ -574,7 +574,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
         if (!mounted) return false;
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('✅ Drawing saved!')));
+        ).showSnackBar(const SnackBar(content: Text('Drawing saved.')));
         Navigator.pop(context); // balik sa DrawingDashboard.dart
         return false;
       } else {
@@ -686,7 +686,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                       await _saveDrawingToLocal();
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('✅ Drawing saved.')),
+                        const SnackBar(content: Text('Drawing saved.')),
                       );
                       await Future.delayed(const Duration(milliseconds: 500));
                       Navigator.pushReplacement(
@@ -716,7 +716,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                         value: 'camera',
                         child: Text('Take Picture'),
                       ),
-                      PopupMenuItem(value: 'save', child: Text('Save as PNG')),
+                      PopupMenuItem(value: 'save', child: Text('Save as JPEG')),
                     ],
               ),
             ],

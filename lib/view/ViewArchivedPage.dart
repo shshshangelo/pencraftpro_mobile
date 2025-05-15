@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:pencraftpro/FolderService.dart';
 
@@ -9,6 +10,7 @@ class ViewArchivedPage extends StatefulWidget {
   final List<String> imagePaths;
   final String? voiceNote;
   final List<String> labels;
+  final DateTime? reminder;
   final String? fontFamily;
   final String? folderId;
   final int? folderColor;
@@ -21,6 +23,7 @@ class ViewArchivedPage extends StatefulWidget {
     required this.imagePaths,
     this.voiceNote,
     required this.labels,
+    this.reminder,
     this.fontFamily,
     this.folderId,
     this.folderColor,
@@ -104,82 +107,128 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
           'View Mode Only - Archived',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
             color: Theme.of(context).colorScheme.onPrimary,
-            fontSize: 22,
+            fontSize: 20,
           ),
         ),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               widget.title.isNotEmpty ? widget.title : 'Untitled',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontSize: 28,
+                fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
+            if (widget.reminder != null)
+              Row(
+                children: [
+                  Icon(
+                    Icons.alarm,
+                    size: 20,
+                    color:
+                        widget.reminder!.isBefore(now)
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    DateFormat('MMM dd, yyyy hh:mm a').format(widget.reminder!),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontSize: 14,
+                      color:
+                          widget.reminder!.isBefore(now)
+                              ? Theme.of(context).colorScheme.error
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            const SizedBox(height: 8),
             if (_folderName != null)
               Row(
                 children: [
                   Icon(
                     Icons.folder,
-                    size: 24,
+                    size: 20,
                     color:
                         widget.folderColor != null
                             ? Color(widget.folderColor!)
                             : Theme.of(context).colorScheme.primary,
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Text(
                     _folderName!,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: 16,
+                      fontSize: 14,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
               ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             if (widget.labels.isNotEmpty)
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: 6,
+                runSpacing: 6,
                 children:
                     widget.labels.map((label) {
                       return Chip(
-                        label: Text(
-                          label,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.copyWith(
-                            fontSize: 14,
-                            color:
-                                Theme.of(
-                                  context,
-                                ).colorScheme.onPrimaryContainer,
-                          ),
+                        padding: EdgeInsets.zero,
+                        labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.label_important,
+                              size: 14,
+                              color:
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              label,
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.copyWith(
+                                fontSize: 12,
+                                color:
+                                    Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                          ],
                         ),
                         backgroundColor:
                             Theme.of(context).colorScheme.primaryContainer,
                       );
                     }).toList(),
               ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             ...widget.contentJson.map((item) {
               final checklistItems =
                   item['checklistItems'] as List<dynamic>? ?? [];
-              if (checklistItems.isNotEmpty) {
+              final hasChecklist = checklistItems.isNotEmpty;
+
+              if (hasChecklist) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children:
@@ -199,12 +248,12 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                                 style: Theme.of(
                                   context,
                                 ).textTheme.bodyMedium?.copyWith(
+                                  fontSize: 14,
+                                  fontFamily: widget.fontFamily ?? 'Roboto',
                                   decoration:
                                       checked
                                           ? TextDecoration.lineThrough
                                           : null,
-                                  fontSize: 16,
-                                  fontFamily: widget.fontFamily ?? 'Roboto',
                                   color:
                                       Theme.of(
                                         context,
@@ -218,17 +267,21 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                 );
               } else {
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
+                  padding: const EdgeInsets.only(bottom: 12.0),
                   child: Text(
                     item['text'] ?? '',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: (item['fontSize'] ?? 18).toDouble(),
+                      fontSize:
+                          (item['fontSize'] != null)
+                              ? (item['fontSize'] as num).toDouble()
+                              : 16,
+                      fontFamily: widget.fontFamily ?? 'Roboto',
                       fontWeight:
-                          item['bold'] == true
+                          (item['bold'] == true)
                               ? FontWeight.bold
                               : FontWeight.normal,
                       fontStyle:
-                          item['italic'] == true
+                          (item['italic'] == true)
                               ? FontStyle.italic
                               : FontStyle.normal,
                       decoration: TextDecoration.combine([
@@ -236,83 +289,129 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                         if (item['strikethrough'] == true)
                           TextDecoration.lineThrough,
                       ]),
-                      fontFamily: widget.fontFamily ?? 'Roboto',
                       color: Theme.of(context).textTheme.bodyMedium?.color,
                     ),
                   ),
                 );
               }
             }),
-            const SizedBox(height: 20),
-            if (widget.imagePaths.isNotEmpty)
-              SizedBox(
-                height: 240,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: widget.imagePaths.length,
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 10.0),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          File(widget.imagePaths[index]),
-                          width: 220,
-                          height: 240,
-                          fit: BoxFit.cover,
+            if (widget.voiceNote != null)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          _isPlaying ? Icons.pause : Icons.play_arrow,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        onPressed: () async {
+                          if (_isPlaying) {
+                            await _audioPlayer.pause();
+                          } else {
+                            await _audioPlayer.play();
+                          }
+                        },
+                      ),
+                      Expanded(
+                        child: Slider(
+                          min: 0,
+                          max: _totalDuration.inMilliseconds.toDouble(),
+                          value: _currentPosition.inMilliseconds
+                              .toDouble()
+                              .clamp(
+                                0,
+                                _totalDuration.inMilliseconds.toDouble(),
+                              ),
+                          activeColor: Theme.of(context).colorScheme.primary,
+                          inactiveColor: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withOpacity(0.3),
+                          onChanged: (value) async {
+                            final position = Duration(
+                              milliseconds: value.toInt(),
+                            );
+                            await _audioPlayer.seek(position);
+                          },
                         ),
                       ),
-                    );
-                  },
-                ),
-              ),
-            const SizedBox(height: 20),
-            if (widget.voiceNote != null)
-              Row(
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      _isPlaying ? Icons.pause : Icons.play_arrow,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    onPressed: () async {
-                      if (_isPlaying) {
-                        await _audioPlayer.pause();
-                      } else {
-                        await _audioPlayer.play();
-                      }
-                    },
-                  ),
-                  Expanded(
-                    child: Slider(
-                      min: 0,
-                      max: _totalDuration.inMilliseconds.toDouble(),
-                      value: _currentPosition.inMilliseconds.toDouble().clamp(
-                        0,
-                        _totalDuration.inMilliseconds.toDouble(),
+                      Text(
+                        '${_formatDuration(_currentPosition)} / ${_formatDuration(_totalDuration)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontSize: 12,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
                       ),
-                      activeColor: Theme.of(context).colorScheme.primary,
-                      inactiveColor: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.3),
-                      onChanged: (value) async {
-                        final position = Duration(milliseconds: value.toInt());
-                        await _audioPlayer.seek(position);
-                      },
-                    ),
-                  ),
-                  Text(
-                    '${_formatDuration(_currentPosition)} / ${_formatDuration(_totalDuration)}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: 14,
-                      color: Theme.of(context).textTheme.bodySmall?.color,
-                    ),
+                    ],
                   ),
                 ],
+              ),
+            if (widget.imagePaths.isNotEmpty)
+              Column(
+                children:
+                    widget.imagePaths.map((path) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Stack(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                _showImageViewer(
+                                  context,
+                                  widget.imagePaths,
+                                  widget.imagePaths.indexOf(path),
+                                );
+                              },
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.file(
+                                  File(path),
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  errorBuilder:
+                                      (context, error, stackTrace) => Icon(
+                                        Icons.broken_image,
+                                        size: 40,
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
               ),
           ],
         ),
       ),
+    );
+  }
+
+  void _showImageViewer(
+    BuildContext context,
+    List<String> images,
+    int initialIndex,
+  ) {
+    showDialog(
+      context: context,
+      builder:
+          (_) => Dialog(
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            insetPadding: EdgeInsets.zero,
+            child: PageView.builder(
+              controller: PageController(initialPage: initialIndex),
+              itemCount: images.length,
+              itemBuilder:
+                  (context, index) => InteractiveViewer(
+                    child: Image.file(File(images[index]), fit: BoxFit.contain),
+                  ),
+            ),
+          ),
     );
   }
 }

@@ -195,7 +195,7 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                                       MaterialPageRoute(
                                         builder:
                                             (_) => DrawingCanvasPage(
-                                              loadedImage: File(path!),
+                                              loadedImage: File(path),
                                               customTitle: title,
                                             ),
                                       ),
@@ -230,7 +230,7 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                                                             8,
                                                           ),
                                                       child: Image.file(
-                                                        File(path!),
+                                                        File(path),
                                                         fit: BoxFit.cover,
                                                       ),
                                                     )

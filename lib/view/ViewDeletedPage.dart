@@ -115,6 +115,8 @@ class _ViewDeletedPageState extends State<ViewDeletedPage> {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -147,17 +149,17 @@ class _ViewDeletedPageState extends State<ViewDeletedPage> {
                     Icons.alarm,
                     size: 20,
                     color:
-                        widget.reminder!.isBefore(DateTime.now())
+                        widget.reminder!.isBefore(now)
                             ? Theme.of(context).colorScheme.error
                             : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   Text(
                     DateFormat('MMM dd, yyyy hh:mm a').format(widget.reminder!),
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontSize: 14,
                       color:
-                          widget.reminder!.isBefore(DateTime.now())
+                          widget.reminder!.isBefore(now)
                               ? Theme.of(context).colorScheme.error
                               : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -233,6 +235,7 @@ class _ViewDeletedPageState extends State<ViewDeletedPage> {
               final checklistItems =
                   item['checklistItems'] as List<dynamic>? ?? [];
               final hasChecklist = checklistItems.isNotEmpty;
+
               if (hasChecklist) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -300,35 +303,6 @@ class _ViewDeletedPageState extends State<ViewDeletedPage> {
                 );
               }
             }),
-            const SizedBox(height: 16),
-            if (widget.imagePaths.isNotEmpty)
-              SizedBox(
-                height: 200,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: widget.imagePaths.length,
-                  itemBuilder: (context, index) {
-                    return GestureDetector(
-                      onTap: () {
-                        _showImageViewer(context, widget.imagePaths, index);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.file(
-                            File(widget.imagePaths[index]),
-                            width: 180,
-                            height: 200,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            const SizedBox(height: 16),
             if (widget.voiceNote != null)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,6 +354,45 @@ class _ViewDeletedPageState extends State<ViewDeletedPage> {
                     ],
                   ),
                 ],
+              ),
+            if (widget.imagePaths.isNotEmpty)
+              Column(
+                children:
+                    widget.imagePaths.map((path) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Stack(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                _showImageViewer(
+                                  context,
+                                  widget.imagePaths,
+                                  widget.imagePaths.indexOf(path),
+                                );
+                              },
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.file(
+                                  File(path),
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  errorBuilder:
+                                      (context, error, stackTrace) => Icon(
+                                        Icons.broken_image,
+                                        size: 40,
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
               ),
           ],
         ),

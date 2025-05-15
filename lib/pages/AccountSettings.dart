@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/services.dart';
 
 class AccountSettings extends StatefulWidget {
   final bool allowAccessAfterSetup;
@@ -115,6 +116,7 @@ class _AccountSettingsState extends State<AccountSettings> {
   bool _isNameVerified = false;
   bool _isFirstTimeUser = true;
   File? _customProfileImage;
+  final bool _justLoadedAccountSettings = false;
 
   @override
   void initState() {
@@ -122,161 +124,98 @@ class _AccountSettingsState extends State<AccountSettings> {
     _initializeUserData();
   }
 
+  bool _shouldShowFinalSpinner() {
+    // For Google users, only need role and ID verification
+    if (_isGoogleUser) {
+      return _isRoleSelected && _isIdVerified;
+    }
+    // For non-Google users, need name verification too
+    else {
+      return _isNameVerified && _isRoleSelected && _isIdVerified;
+    }
+  }
+
   Future<void> _initializeUserData() async {
-    debugPrint('Initializing user data...');
     final prefs = await SharedPreferences.getInstance();
     final currentUser = FirebaseAuth.instance.currentUser;
-    await currentUser?.reload();
-    final user = FirebaseAuth.instance.currentUser;
 
-    // Handle user ID consistency
-    final storedUserId = prefs.getString('userId');
-    if (user != null && storedUserId != null && storedUserId != user.uid) {
-      debugPrint('Clearing SharedPreferences due to user ID mismatch');
-      await prefs.clear();
-      await prefs.setString('userId', user.uid);
-    } else if (user != null && storedUserId == null) {
-      debugPrint('Setting userId in SharedPreferences');
-      await prefs.setString('userId', user.uid);
+    // Check if user is logged in
+    if (currentUser == null) {
+      debugPrint('No user logged in');
+      return;
     }
 
-    _isGoogleUser =
-        user != null &&
-        user.providerData.any((info) => info.providerId == 'google.com');
-    debugPrint('Is Google user: $_isGoogleUser');
+    // Check if this is a Google user
+    _isGoogleUser = currentUser.providerData.any(
+      (info) => info.providerId == 'google.com',
+    );
 
-    if (user != null) {
-      // Check if user has completed setup
+    // Load data from SharedPreferences first
+    setState(() {
+      _fullName =
+          prefs.getString('fullName') ??
+          (_isGoogleUser ? currentUser.displayName ?? '' : '');
+      _profileInitials = _getInitials(_fullName);
+      _profilePictureUrl =
+          prefs.getString('photoUrl') ??
+          (_isGoogleUser ? currentUser.photoURL ?? '' : '');
+      _isNameVerified = prefs.getBool('isNameVerified') ?? _isGoogleUser;
+      _isRoleSelected = prefs.getBool('isRoleSelected') ?? false;
+      _isIdVerified = prefs.getBool('isIdVerified') ?? false;
       _isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
-      debugPrint(
-        'Loaded isFirstTimeUser from SharedPreferences: $_isFirstTimeUser',
-      );
-      debugPrint('allowAccessAfterSetup: ${widget.allowAccessAfterSetup}');
+      _selectedRole = prefs.getString('selectedRole') ?? 'Student';
+      _lastNameChangeTimestamp = prefs.getInt('lastNameChangeTimestamp');
 
-      // Only redirect if not allowed to access after setup
-      if (!_isFirstTimeUser && mounted && !widget.allowAccessAfterSetup) {
-        debugPrint('User setup complete, scheduling redirect to /select');
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            Navigator.pushNamedAndRemoveUntil(
-              context,
-              '/select',
-              (route) => false,
-            );
-          }
-        });
-        return;
+      // Set controller values
+      _nameController.text = _fullName;
+      if (_selectedRole == 'Student') {
+        _idController.text = prefs.getString('studentId') ?? '';
+      } else {
+        _teacherIdController.text = prefs.getString('teacherId') ?? '';
       }
+    });
 
+    // Try to sync with Firestore if online
+    try {
       final docRef = FirebaseFirestore.instance
           .collection('users')
-          .doc(user.uid);
-      DocumentSnapshot<Map<String, dynamic>>? docSnapshot;
-      bool isNewUser = false;
+          .doc(currentUser.uid);
+      final docSnapshot = await docRef.get();
 
-      // Show loader for initial setup
-      await _showLoadingSpinner(
-        _isGoogleUser
-            ? 'Creating your PenCraft Pro account...'
-            : 'Creating your PenCraft Pro account...',
-      );
-
-      // Try Firestore cache first, then server
-      try {
-        docSnapshot = await docRef.get(const GetOptions(source: Source.cache));
-        if (!docSnapshot.exists) {
-          debugPrint('No cached data, trying server');
-          docSnapshot = await docRef.get();
-        }
-        isNewUser = !docSnapshot.exists;
-        debugPrint('Firestore data retrieved: exists=${docSnapshot.exists}');
-      } catch (e) {
-        debugPrint('⚠️ Firestore unavailable, using SharedPreferences: $e');
-        docSnapshot = null;
-      }
-
-      if (_isGoogleUser) {
-        final googleName = user.displayName ?? user.email!.split('@')[0];
-        setState(() {
-          _fullName = googleName;
-          _profilePictureUrl = user.photoURL;
-          _profileInitials = _getInitials(googleName);
-          _isNameVerified = true;
-          _selectedRole = prefs.getString('selectedRole') ?? 'Student';
-          _isRoleSelected = prefs.getBool('isRoleSelected') ?? false;
-          _isIdVerified = prefs.getBool('isIdVerified') ?? false;
-          _isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
-          _nameController.text = _fullName;
-        });
-
-        await _savePreferences();
-        debugPrint(
-          'Initialized Google user: fullName=$_fullName, role=$_selectedRole',
-        );
-
-        if (isNewUser) {
-          await _saveGoogleUserToFirestore(user);
-        }
-      }
-
-      if (docSnapshot != null && docSnapshot.exists) {
+      if (docSnapshot.exists) {
         final data = docSnapshot.data()!;
+
+        // Only update state if Firestore has newer data
         setState(() {
-          _isNameVerified = data['isNameVerified'] as bool? ?? _isGoogleUser;
-          _isRoleSelected = data['isRoleSelected'] as bool? ?? false;
-          _isIdVerified = data['isIdVerified'] as bool? ?? false;
-          _isFirstTimeUser = data['isFirstTimeUser'] as bool? ?? true;
-          _fullName =
-              data['fullName'] as String? ??
-              (_isGoogleUser ? user.displayName ?? '' : '');
-          _profilePictureUrl = data['photoUrl'] as String? ?? '';
-          _nameController.text = _fullName;
-          _profileInitials = _getInitials(_fullName);
-          _selectedRole =
-              ['Student', 'Teacher'].contains(data['role'])
-                  ? data['role'] as String
-                  : 'Student';
-          _lastNameChangeTimestamp = data['lastNameChangeTimestamp'] as int?;
+          if (!_isGoogleUser) {
+            _fullName = data['fullName'] as String? ?? _fullName;
+            _profilePictureUrl =
+                data['photoUrl'] as String? ?? _profilePictureUrl;
+            _nameController.text = _fullName;
+          }
+          _isNameVerified = data['isNameVerified'] as bool? ?? _isNameVerified;
+          _isRoleSelected = data['isRoleSelected'] as bool? ?? _isRoleSelected;
+          _isIdVerified = data['isIdVerified'] as bool? ?? _isIdVerified;
+          _isFirstTimeUser =
+              data['isFirstTimeUser'] as bool? ?? _isFirstTimeUser;
+          _selectedRole = data['role'] as String? ?? _selectedRole;
+
           if (_selectedRole == 'Student') {
-            _idController.text = data['idNumber'] as String? ?? '';
+            _idController.text =
+                data['idNumber'] as String? ?? _idController.text;
           } else {
-            _teacherIdController.text = data['idNumber'] as String? ?? '';
+            _teacherIdController.text =
+                data['idNumber'] as String? ?? _teacherIdController.text;
           }
         });
 
+        // Save the synced data back to SharedPreferences
         await _savePreferences();
-        debugPrint(
-          'Loaded Firestore data: fullName=$_fullName, role=$_selectedRole',
-        );
-      } else {
-        setState(() {
-          _fullName =
-              prefs.getString('fullName') ??
-              (_isGoogleUser ? user.displayName ?? '' : '');
-          _profileInitials = prefs.getString('profileInitials') ?? 'U';
-          _profilePictureUrl = prefs.getString('photoUrl') ?? '';
-          _isNameVerified = prefs.getBool('isNameVerified') ?? _isGoogleUser;
-          _isRoleSelected = prefs.getBool('isRoleSelected') ?? false;
-          _isIdVerified = prefs.getBool('isIdVerified') ?? false;
-          _isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
-          _selectedRole = prefs.getString('selectedRole') ?? 'Student';
-          _nameController.text = _fullName;
-          _lastNameChangeTimestamp = prefs.getInt('lastNameChangeTimestamp');
-          if (_selectedRole == 'Student') {
-            _idController.text = prefs.getString('studentId') ?? '';
-          } else {
-            _teacherIdController.text = prefs.getString('teacherId') ?? '';
-          }
-        });
-        debugPrint(
-          'Loaded offline data: fullName=$_fullName, role=$_selectedRole',
-        );
-      }
-
-      if (!_isGoogleUser && isNewUser) {
+      } else if (!_isGoogleUser) {
+        // Initialize new user in Firestore
         try {
           await docRef.set({
-            'email': user.email,
+            'email': currentUser.email,
             'fullName': '',
             'role': 'Student',
             'createdAt': FieldValue.serverTimestamp(),
@@ -289,50 +228,27 @@ class _AccountSettingsState extends State<AccountSettings> {
           debugPrint('Initialized new email/password user in Firestore');
         } catch (e) {
           debugPrint(
-            '⚠️ Failed to initialize email/password user in Firestore: $e',
+            'Failed to initialize email/password user in Firestore: $e',
           );
         }
       }
+    } catch (e) {
+      debugPrint('Firestore unavailable, using SharedPreferences data: $e');
+    }
 
-      if (!_isGoogleUser) {
-        _checkNameEditability();
-      }
+    if (!_isGoogleUser) {
+      _checkNameEditability();
+    }
 
-      await _loadCustomProfileImage();
+    await _loadCustomProfileImage();
 
-      // Only redirect if not allowed to access after setup
-      if (!_isFirstTimeUser && mounted && !widget.allowAccessAfterSetup) {
-        debugPrint('Post-init redirect to /select');
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            Navigator.pushNamedAndRemoveUntil(
-              context,
-              '/select',
-              (route) => false,
-            );
-          }
-        });
-      }
-    } else {
-      debugPrint(
-        'No user logged in, setting defaults and redirecting to /login',
+    // Show loading spinner for first-time setup
+    if (_isFirstTimeUser && _shouldShowFinalSpinner()) {
+      await _showLoadingSpinner(
+        'Please wait while we are creating your PenCraft Pro account.',
       );
-      setState(() {
-        _fullName = '';
-        _selectedRole = 'Student';
-        _profileInitials = 'U';
-        _isNameVerified = false;
-        _isRoleSelected = false;
-        _isIdVerified = false;
-        _isFirstTimeUser = true;
-        _profilePictureUrl = '';
-        _nameController.text = '';
-        _idController.text = '';
-        _teacherIdController.text = '';
-      });
-      await _savePreferences();
       if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+        Navigator.pushNamedAndRemoveUntil(context, '/select', (route) => false);
       }
     }
   }
@@ -419,49 +335,6 @@ class _AccountSettingsState extends State<AccountSettings> {
           ),
         );
       }
-    }
-  }
-
-  Future<void> _uploadProfileImage(File file) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      debugPrint('No authenticated user found');
-      return;
-    }
-
-    final ref = FirebaseStorage.instance
-        .ref()
-        .child('profile_images')
-        .child('${user.uid}.jpg');
-
-    try {
-      await ref.putFile(file);
-      final downloadUrl = await ref.getDownloadURL();
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'photoUrl': downloadUrl,
-      }, SetOptions(merge: true));
-      await user.updatePhotoURL(downloadUrl);
-      await user.reload();
-      setState(() {
-        _profilePictureUrl = downloadUrl;
-      });
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('photoUrl', downloadUrl);
-      debugPrint('Profile image uploaded: $downloadUrl');
-    } catch (e) {
-      debugPrint('Failed to upload profile image: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to upload profile picture.',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onErrorContainer,
-            ),
-          ),
-          backgroundColor: Theme.of(context).colorScheme.errorContainer,
-        ),
-      );
     }
   }
 
@@ -690,26 +563,45 @@ class _AccountSettingsState extends State<AccountSettings> {
 
   Future<void> _savePreferences() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Save basic profile information
     await prefs.setString('fullName', _fullName);
     await prefs.setString('profileInitials', _profileInitials);
     await prefs.setString('selectedRole', _selectedRole);
+    await prefs.setString('photoUrl', _profilePictureUrl ?? '');
+
+    // Save ID information
+    await prefs.setString('studentId', _idController.text.trim());
+    await prefs.setString('teacherId', _teacherIdController.text.trim());
+
+    // Save verification flags
     await prefs.setBool('isIdVerified', _isIdVerified);
     await prefs.setBool('isNameVerified', _isNameVerified);
     await prefs.setBool('isRoleSelected', _isRoleSelected);
     await prefs.setBool('isFirstTimeUser', _isFirstTimeUser);
-    await prefs.setString('photoUrl', _profilePictureUrl ?? '');
-    await prefs.setString('studentId', _idController.text);
-    await prefs.setString('teacherId', _teacherIdController.text);
+
+    // Save timestamps
     if (_lastNameChangeTimestamp != null) {
       await prefs.setInt('lastNameChangeTimestamp', _lastNameChangeTimestamp!);
     }
+
+    // Save profile image path if exists
     if (_customProfileImage != null) {
       await prefs.setString(
         'customProfileImagePath',
         _customProfileImage!.path,
       );
     }
-    debugPrint('Saved preferences: fullName=$_fullName, role=$_selectedRole');
+
+    // Save user ID for offline reference
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      await prefs.setString('userId', user.uid);
+    }
+
+    debugPrint(
+      'Saved preferences: fullName=$_fullName, role=$_selectedRole, isNameVerified=$_isNameVerified, isRoleSelected=$_isRoleSelected, isIdVerified=$_isIdVerified, isFirstTimeUser=$_isFirstTimeUser',
+    );
   }
 
   Future<void> _updateUserFirestoreData() async {
@@ -881,7 +773,10 @@ class _AccountSettingsState extends State<AccountSettings> {
                 ),
                 onPressed: () async {
                   Navigator.of(context).pop();
-                  await _showLoadingSpinner('Updating full name...');
+
+                  // Get current photoUrl before updating
+                  final currentPhotoUrl = _profilePictureUrl ?? '';
+
                   setState(() {
                     _fullName = newName;
                     _profileInitials = _getInitials(_fullName);
@@ -891,23 +786,54 @@ class _AccountSettingsState extends State<AccountSettings> {
                     _isNameVerified = true;
                     _isFirstTimeUser = false;
                   });
-                  await _syncState();
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Full name updated successfully.',
-                        style: TextStyle(
-                          color:
-                              Theme.of(
-                                context,
-                              ).colorScheme.onSecondaryContainer,
-                        ),
-                      ),
-                      backgroundColor:
-                          Theme.of(context).colorScheme.secondaryContainer,
-                    ),
+
+                  // Update Firestore with all user data including photoUrl
+                  try {
+                    await FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(user.uid)
+                        .update({
+                          'fullName': newName,
+                          'isNameVerified': true,
+                          'isRoleSelected': _isRoleSelected,
+                          'isIdVerified': _isIdVerified,
+                          'isFirstTimeUser': false,
+                          'lastNameChangeTimestamp': _lastNameChangeTimestamp,
+                          'photoUrl': currentPhotoUrl, // Preserve the photoUrl
+                        });
+                  } catch (e) {
+                    debugPrint('Error updating Firestore: $e');
+                  }
+
+                  // Update SharedPreferences
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('fullName', newName);
+                  await prefs.setString('profileInitials', _profileInitials);
+                  await prefs.setBool('isNameVerified', true);
+                  await prefs.setBool('isRoleSelected', _isRoleSelected);
+                  await prefs.setBool('isIdVerified', _isIdVerified);
+                  await prefs.setBool('isFirstTimeUser', false);
+                  await prefs.setInt(
+                    'lastNameChangeTimestamp',
+                    _lastNameChangeTimestamp!,
                   );
+                  await prefs.setString(
+                    'photoUrl',
+                    currentPhotoUrl,
+                  ); // Preserve the photoUrl
+
+                  if (_shouldShowFinalSpinner()) {
+                    await _showLoadingSpinner(
+                      'Please wait while we are creating your PenCraft Pro account.',
+                    );
+                    if (mounted) {
+                      Navigator.pushNamedAndRemoveUntil(
+                        context,
+                        '/select',
+                        (route) => false,
+                      );
+                    }
+                  }
                 },
               ),
             ],
@@ -937,7 +863,7 @@ class _AccountSettingsState extends State<AccountSettings> {
             style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
           ),
           content: Text(
-            'Is this correct? ID No.: $id\nOnce verified, you can\'t change it.',
+            'Is this correct? Student ID No.: $id\nOnce verified, you can\'t change it.',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -965,27 +891,25 @@ class _AccountSettingsState extends State<AccountSettings> {
               ),
               onPressed: () async {
                 Navigator.of(context).pop();
-                await _showLoadingSpinner('Verifying Student ID...');
                 setState(() {
                   _isIdVerified = true;
                   _idNumberErrorText = null;
                   _isFirstTimeUser = false;
                 });
                 await _syncState();
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Student ID verified successfully.',
-                      style: TextStyle(
-                        color:
-                            Theme.of(context).colorScheme.onSecondaryContainer,
-                      ),
-                    ),
-                    backgroundColor:
-                        Theme.of(context).colorScheme.secondaryContainer,
-                  ),
-                );
+
+                if (_shouldShowFinalSpinner()) {
+                  await _showLoadingSpinner(
+                    'Please wait while we are creating your PenCraft Pro account.',
+                  );
+                  if (mounted) {
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      '/select',
+                      (route) => false,
+                    );
+                  }
+                }
               },
             ),
           ],
@@ -1042,27 +966,25 @@ class _AccountSettingsState extends State<AccountSettings> {
               ),
               onPressed: () async {
                 Navigator.of(context).pop();
-                await _showLoadingSpinner('Verifying Teacher ID...');
                 setState(() {
                   _isIdVerified = true;
                   _teacherIdErrorText = null;
                   _isFirstTimeUser = false;
                 });
                 await _syncState();
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Teacher ID verified successfully.',
-                      style: TextStyle(
-                        color:
-                            Theme.of(context).colorScheme.onSecondaryContainer,
-                      ),
-                    ),
-                    backgroundColor:
-                        Theme.of(context).colorScheme.secondaryContainer,
-                  ),
-                );
+
+                if (_shouldShowFinalSpinner()) {
+                  await _showLoadingSpinner(
+                    'Please wait while we are creating your PenCraft Pro account.',
+                  );
+                  if (mounted) {
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      '/select',
+                      (route) => false,
+                    );
+                  }
+                }
               },
             ),
           ],
@@ -1073,6 +995,7 @@ class _AccountSettingsState extends State<AccountSettings> {
 
   Future<void> _showLoadingSpinner(String message) async {
     debugPrint('Showing loading spinner: $message');
+    final currentContext = context;
     final overlayEntry = OverlayEntry(
       builder:
           (context) => Material(
@@ -1116,11 +1039,78 @@ class _AccountSettingsState extends State<AccountSettings> {
           ),
     );
 
-    Overlay.of(context, rootOverlay: true).insert(overlayEntry);
+    Overlay.of(currentContext, rootOverlay: true).insert(overlayEntry);
     await Future.delayed(const Duration(seconds: 2));
+
+    // Update _isFirstTimeUser in Firestore and SharedPreferences
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .update({'isFirstTimeUser': false});
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('isFirstTimeUser', false);
+
+        setState(() {
+          _isFirstTimeUser = false;
+        });
+      } catch (e) {
+        debugPrint('Failed to update isFirstTimeUser: $e');
+      }
+    }
+
     if (mounted) {
       overlayEntry.remove();
+      Navigator.pushNamedAndRemoveUntil(context, '/select', (route) => false);
     }
+  }
+
+  bool _isProfileSetupComplete() {
+    if (_isGoogleUser) {
+      return _isRoleSelected && _isIdVerified;
+    } else {
+      return _isNameVerified && _isRoleSelected && _isIdVerified;
+    }
+  }
+
+  Future<bool> _onWillPop() async {
+    if (!_isProfileSetupComplete()) {
+      final shouldPop = await showDialog<bool>(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              title: Text(
+                'Incomplete Profile Setup',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              content: Text(
+                'Please complete your profile setup before leaving this page.\n\nRequired steps:\n${!_isNameVerified && !_isGoogleUser ? '• Set your full name\n' : ''}${!_isRoleSelected ? '• Select your role\n' : ''}${!_isIdVerified ? '• Verify your ID number' : ''}',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text(
+                    'Stay',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+      );
+      return shouldPop ?? false;
+    }
+    return true;
   }
 
   @override
@@ -1140,10 +1130,6 @@ class _AccountSettingsState extends State<AccountSettings> {
               'No data available. Please connect to the internet.',
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
-            // ElevatedButton(
-            //  onPressed: () => Navigator.pushNamed(context, '/select'),
-            // child: const Text('Go to Home'),
-            // ),
           ],
         ),
       );
@@ -1155,7 +1141,7 @@ class _AccountSettingsState extends State<AccountSettings> {
     }
 
     return WillPopScope(
-      onWillPop: () async => false,
+      onWillPop: _onWillPop,
       child: Scaffold(
         drawer: Drawer(
           backgroundColor: Theme.of(context).colorScheme.surface,
@@ -1346,6 +1332,24 @@ class _AccountSettingsState extends State<AccountSettings> {
                 ),
                 enabled: !_isGoogleUser && _isNameEditable && !_isNameVerified,
                 readOnly: _isGoogleUser || _isNameVerified,
+                textCapitalization: TextCapitalization.words,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s]')),
+                  TextInputFormatter.withFunction((oldValue, newValue) {
+                    // Capitalize first letter of each word
+                    if (newValue.text.isEmpty) return newValue;
+                    final words = newValue.text.split(' ');
+                    final capitalizedWords = words.map((word) {
+                      if (word.isEmpty) return word;
+                      return word[0].toUpperCase() +
+                          word.substring(1).toLowerCase();
+                    });
+                    return TextEditingValue(
+                      text: capitalizedWords.join(' '),
+                      selection: newValue.selection,
+                    );
+                  }),
+                ],
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
                   hintText: 'Enter your full name',
@@ -1507,7 +1511,7 @@ class _AccountSettingsState extends State<AccountSettings> {
                       'Selected Role: $_selectedRole',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Theme.of(context).colorScheme.onSurface,
+                        color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -1622,18 +1626,6 @@ class _AccountSettingsState extends State<AccountSettings> {
                     style: const TextStyle(fontSize: 14, color: Colors.green),
                   ),
                 ),
-              //   if (!_isFirstTimeUser)
-              //    Padding(
-              //      padding: const EdgeInsets.only(top: 16),
-              //     child: ElevatedButton(
-              //      onPressed: () => Navigator.pushNamed(context, '/select'),
-              //       style: ElevatedButton.styleFrom(
-              //         backgroundColor: Theme.of(context).colorScheme.primary,
-              //  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              //   ),
-              //     child: const Text('Go to Home'),
-              // ),
-              //  ),
               const SizedBox(height: 20),
               Text(
                 'Help & About',
@@ -1884,31 +1876,20 @@ class _AccountSettingsState extends State<AccountSettings> {
                     );
 
                     if (confirm == true) {
-                      await _showLoadingSpinner('Selecting role...');
                       setState(() {
                         _selectedRole = tempSelectedRole;
                         _isRoleSelected = true;
                         _isIdVerified = false;
                         _idController.clear();
                         _teacherIdController.clear();
-                        _isFirstTimeUser = false;
                       });
                       await _syncState();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Role selected: $_selectedRole',
-                            style: TextStyle(
-                              color:
-                                  Theme.of(
-                                    context,
-                                  ).colorScheme.onSecondaryContainer,
-                            ),
-                          ),
-                          backgroundColor:
-                              Theme.of(context).colorScheme.secondaryContainer,
-                        ),
-                      );
+
+                      if (_isGoogleUser && _isRoleSelected && _isIdVerified) {
+                        await _showLoadingSpinner(
+                          'Please wait while we are creating your PenCraft Pro account.',
+                        );
+                      }
                     }
                   },
                   style: ElevatedButton.styleFrom(
@@ -1945,7 +1926,41 @@ class _AccountSettingsState extends State<AccountSettings> {
           color: Theme.of(context).colorScheme.onSurface,
         ),
       ),
-      onTap: () {
+      onTap: () async {
+        if (!_isProfileSetupComplete()) {
+          if (!mounted) return;
+          await showDialog(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  title: Text(
+                    'Incomplete Profile Setup',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  content: Text(
+                    'Please complete your profile setup before leaving this page.\n\nRequired steps:\n${!_isNameVerified && !_isGoogleUser ? '• Set your full name\n' : ''}${!_isRoleSelected ? '• Select your role\n' : ''}${!_isIdVerified ? '• Verify your ID number' : ''}',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text(
+                        'OK',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+          );
+          return;
+        }
         debugPrint('Navigating to $route');
         Navigator.pushNamed(context, route);
       },
@@ -1958,5 +1973,74 @@ class _AccountSettingsState extends State<AccountSettings> {
     _idController.dispose();
     _teacherIdController.dispose();
     super.dispose();
+  }
+
+  Future<void> _uploadProfileImage(File file) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('profile_images')
+          .child('${user.uid}.jpg');
+
+      final uploadTask = await ref.putFile(file);
+      final downloadUrl = await ref.getDownloadURL();
+
+      final userDoc = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid);
+
+      final docSnapshot = await userDoc.get();
+      if (!docSnapshot.exists) {
+        await userDoc.set({
+          'email': user.email,
+          'photoUrl': downloadUrl,
+          'lastProfileUpdate': FieldValue.serverTimestamp(),
+        });
+      } else {
+        await userDoc.update({
+          'photoUrl': downloadUrl,
+          'lastProfileUpdate': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await user.updatePhotoURL(downloadUrl);
+      await user.reload();
+
+      setState(() {
+        _profilePictureUrl = downloadUrl;
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('photoUrl', downloadUrl);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Profile picture updated successfully.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unable to update profile picture.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+        ),
+      );
+    }
   }
 }

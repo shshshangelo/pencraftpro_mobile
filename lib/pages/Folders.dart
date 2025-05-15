@@ -4,6 +4,7 @@ import 'package:pencraftpro/FolderService.dart';
 import 'package:pencraftpro/services/logout_service.dart';
 import 'package:pencraftpro/view/ViewFolderPage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:pencraftpro/services/profile_service.dart';
 
 class Folders extends StatefulWidget {
   const Folders({super.key});
@@ -600,7 +601,28 @@ class _FoldersState extends State<Folders> {
           selected
               ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
               : null,
-      onTap: () => Navigator.pushNamed(context, route),
+      onTap: () async {
+        if (route != '/accountsettings') {
+          final isComplete = await ProfileService.isProfileComplete();
+          if (!isComplete) {
+            if (!mounted) return;
+            Navigator.pushNamed(context, '/accountsettings');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Please complete your profile setup first.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
+                backgroundColor: Theme.of(context).colorScheme.errorContainer,
+              ),
+            );
+            return;
+          }
+        }
+        Navigator.pushNamed(context, route);
+      },
     );
   }
 }

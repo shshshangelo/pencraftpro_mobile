@@ -9,6 +9,7 @@ import 'package:pencraftpro/services/SyncService.dart';
 import 'package:pencraftpro/view/ViewDeletedPage.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:pencraftpro/services/profile_service.dart';
 
 class RecycleBin extends StatefulWidget {
   const RecycleBin({super.key});
@@ -35,8 +36,7 @@ class _RecycleBinState extends State<RecycleBin> {
   void initState() {
     super.initState();
     _loadNotesFromPrefs().then((_) => _autoDeleteOldNotes());
-    _syncPendingDeletes(); // ← dito mo ilalagay
-
+    _syncPendingDeletes();
     _showFirstTimeWarning();
   }
 
@@ -91,10 +91,7 @@ class _RecycleBinState extends State<RecycleBin> {
   Future<void> _saveNotesToPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // I-save lang ang notes na hindi marked as isDeleted
-      final nonDeletedNotes =
-          notes.where((n) => n['isDeleted'] != true).toList();
-      await prefs.setString('notes', jsonEncode(nonDeletedNotes));
+      await prefs.setString('notes', jsonEncode(notes));
     } catch (e) {
       ScaffoldMessenger.of(
         context,
@@ -393,21 +390,55 @@ class _RecycleBinState extends State<RecycleBin> {
     }
   }
 
-  void _restoreSelectedNotes() {
-    setState(() {
+  void _restoreSelectedNotes() async {
+    try {
       for (var id in selectedNotes) {
         final index = notes.indexWhere((note) => note['id'] == id);
         if (index != -1) {
           notes[index]['isDeleted'] = false;
+
+          try {
+            final firestoreId =
+                notes[index]['firestoreId'] ?? notes[index]['id'];
+            await FirebaseFirestore.instance
+                .collection('notes')
+                .doc(firestoreId)
+                .update({'isDeleted': false});
+          } catch (e) {
+            print('⚠️ Offline or failed to update Firestore: $e');
+            final prefs = await SharedPreferences.getInstance();
+            final pendingRestores =
+                prefs.getStringList('pendingRestores') ?? [];
+            if (!pendingRestores.contains(notes[index]['id'])) {
+              pendingRestores.add(notes[index]['id']);
+              await prefs.setStringList('pendingRestores', pendingRestores);
+            }
+          }
         }
       }
-      selectedNotes.clear();
-      isEditing = false;
-    });
-    _saveNotesToPrefs();
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Notes restored')));
+
+      setState(() {
+        notes.removeWhere((note) => selectedNotes.contains(note['id']));
+        selectedNotes.clear();
+        isEditing = false;
+      });
+
+      await _saveNotesToPrefs();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Notes restored successfully')),
+        );
+        Navigator.pushNamedAndRemoveUntil(context, '/notes', (route) => false);
+      }
+    } catch (e) {
+      print('❌ Error restoring notes: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error restoring notes: $e')));
+      }
+    }
   }
 
   void _selectAllNotes() {
@@ -618,7 +649,7 @@ class _RecycleBinState extends State<RecycleBin> {
     );
   }
 
-  Widget _buildDrawerItem(
+  ListTile _buildDrawerItem(
     IconData icon,
     String title,
     String route, {
@@ -636,7 +667,6 @@ class _RecycleBinState extends State<RecycleBin> {
         title,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           fontSize: 13,
-          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
           color:
               selected
                   ? Theme.of(context).colorScheme.primary
@@ -648,7 +678,28 @@ class _RecycleBinState extends State<RecycleBin> {
           selected
               ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
               : null,
-      onTap: () => Navigator.pushNamed(context, route),
+      onTap: () async {
+        if (route != '/accountsettings') {
+          final isComplete = await ProfileService.isProfileComplete();
+          if (!isComplete) {
+            if (!mounted) return;
+            Navigator.pushNamed(context, '/accountsettings');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Please complete your profile setup first.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
+                backgroundColor: Theme.of(context).colorScheme.errorContainer,
+              ),
+            );
+            return;
+          }
+        }
+        Navigator.pushNamed(context, route);
+      },
     );
   }
 
@@ -814,6 +865,9 @@ class _RecycleBinState extends State<RecycleBin> {
     double spacing,
     int crossAxisCount,
   ) {
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+
     if (notes.isEmpty) {
       return Center(
         child: Column(
@@ -838,437 +892,642 @@ class _RecycleBinState extends State<RecycleBin> {
         ),
       );
     }
-    return GridView.builder(
-      padding: EdgeInsets.all(padding),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        crossAxisSpacing: spacing,
-        mainAxisSpacing: spacing,
-        childAspectRatio: 0.65,
-      ),
-      itemCount: notes.length,
-      itemBuilder: (context, index) {
-        final note = notes[index];
-        final isSelected = selectedNotes.contains(note['id']);
-        final reminder =
-            note['reminder'] != null
-                ? DateTime.tryParse(note['reminder'])
-                : null;
-        final labels = (note['labels'] as List<dynamic>?)?.cast<String>() ?? [];
-        final imagePaths = List<String>.from(note['imagePaths'] ?? []);
 
-        return GestureDetector(
-          onTap: () {
-            if (isEditing) {
-              setState(() {
-                if (isSelected) {
-                  selectedNotes.remove(note['id']);
-                } else {
-                  selectedNotes.add(note['id']);
-                }
-              });
-            } else {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder:
-                      (_) => ViewDeletedPage(
-                        title: note['title'] ?? 'Untitled',
-                        contentJson:
-                            (note['contentJson'] as List)
-                                .cast<Map<String, dynamic>>(),
-                        imagePaths: imagePaths,
-                        voiceNote: note['voiceNote'],
-                        labels: labels,
-                        fontFamily: note['fontFamily'],
-                        folderId: note['folderId'],
-                        folderColor: note['folderColor'],
-                        reminder: reminder,
-                      ),
-                ),
-              );
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.all(padding),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          crossAxisSpacing: spacing,
+          mainAxisSpacing: spacing,
+          childAspectRatio: isLandscape ? 0.8 : 0.65,
+        ),
+        itemCount: notes.length,
+        itemBuilder: (context, index) {
+          final note = notes[index];
+          final isSelected = selectedNotes.contains(note['id']);
+          final reminder =
+              note['reminder'] != null
+                  ? DateTime.tryParse(note['reminder'])
+                  : null;
+          final labels =
+              (note['labels'] as List<dynamic>?)?.cast<String>() ?? [];
+          final imagePaths = List<String>.from(note['imagePaths'] ?? []);
+          final isPinned = note['isPinned'] ?? false;
+
+          // Content Detection variables
+          final hasImages = imagePaths.isNotEmpty;
+          final contentList =
+              (note['contentJson'] as List<dynamic>?)
+                  ?.map((e) => Map<String, dynamic>.from(e))
+                  .toList() ??
+              [];
+          bool actualTextContent = false;
+          String firstTextItem = '';
+          String textFontFamily = 'Roboto';
+          double textFontSize = isLandscape ? 12 : 14;
+          bool textIsBold = false;
+          bool textIsItalic = false;
+          bool textIsUnderline = false;
+          bool textIsStrikethrough = false;
+          if (contentList.isNotEmpty) {
+            final textItems =
+                contentList
+                    .where(
+                      (item) =>
+                          (item['text'] as String?)?.trim().isNotEmpty ?? false,
+                    )
+                    .toList();
+            if (textItems.isNotEmpty) {
+              final item = textItems.first;
+              actualTextContent = true;
+              firstTextItem = item['text'];
+              textFontFamily = item['fontFamily'] ?? 'Roboto';
+              textFontSize =
+                  (item['fontSize'] != null)
+                      ? (item['fontSize'] as num).toDouble()
+                      : (isLandscape ? 12 : 14);
+              textIsBold = item['bold'] == true;
+              textIsItalic = item['italic'] == true;
+              textIsUnderline = item['underline'] == true;
+              textIsStrikethrough = item['strikethrough'] == true;
             }
-          },
-          child: Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side:
-                  isSelected
-                      ? BorderSide(
-                        color: Theme.of(context).colorScheme.primary,
-                        width: 2,
-                      )
-                      : BorderSide.none,
-            ),
-            elevation: 3,
-            child: Stack(
-              children: [
-                SizedBox(
-                  height: 300,
-                  child: Padding(
+          }
+          final actualVoiceNotePresent =
+              note['voiceNote'] != null &&
+              (note['voiceNote'] as String).trim().isNotEmpty;
+          final actualTitlePresent =
+              (note['title']?.toString() ?? '').trim().isNotEmpty;
+          final actualReminderPresent = reminder != null;
+          final actualLabelsPresent = labels.isNotEmpty;
+          final List<Map<String, dynamic>> checklists =
+              contentList
+                  .where(
+                    (item) =>
+                        item['checklistItems'] != null &&
+                        (item['checklistItems'] as List).isNotEmpty &&
+                        (item['checklistItems'] as List).any(
+                          (task) =>
+                              (task['text']?.toString().trim().isNotEmpty ??
+                                  false),
+                        ),
+                  )
+                  .toList();
+          final bool actualChecklistPresent = checklists.isNotEmpty;
+
+          // Determine if images should be shown in landscape based on other content
+          int landscapeContentScore = 0;
+          if (actualTitlePresent) landscapeContentScore++;
+          if (actualTextContent) landscapeContentScore++;
+          if (actualChecklistPresent) landscapeContentScore++;
+          if (actualLabelsPresent) landscapeContentScore++;
+          if (actualReminderPresent) landscapeContentScore++;
+          if (actualVoiceNotePresent) landscapeContentScore++;
+
+          bool showImagesInCard = true;
+          if (isLandscape && landscapeContentScore > 3) {
+            showImagesInCard = false;
+          }
+
+          return GestureDetector(
+            onTap: () {
+              if (isEditing) {
+                setState(() {
+                  if (isSelected) {
+                    selectedNotes.remove(note['id']);
+                  } else {
+                    selectedNotes.add(note['id']);
+                  }
+                });
+              } else {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder:
+                        (_) => ViewDeletedPage(
+                          title: note['title'] ?? 'Untitled',
+                          contentJson:
+                              (note['contentJson'] as List)
+                                  .cast<Map<String, dynamic>>(),
+                          imagePaths: imagePaths,
+                          voiceNote: note['voiceNote'],
+                          labels: labels,
+                          fontFamily: note['fontFamily'],
+                          folderId: note['folderId'],
+                          folderColor: note['folderColor'],
+                          reminder: reminder,
+                        ),
+                  ),
+                );
+              }
+            },
+            child: Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side:
+                    isSelected
+                        ? BorderSide(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 2,
+                        )
+                        : BorderSide.none,
+              ),
+              elevation: 5,
+              child: Stack(
+                children: [
+                  Padding(
                     padding: EdgeInsets.all(padding * 1.5),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: isLandscape ? 200 : 300,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (imagePaths.isNotEmpty)
-                              Icon(
-                                Icons.image,
-                                size: 16,
-                                color:
-                                    Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
+                            ClipRect(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                      if (hasImages)
+                                        Icon(
+                                          Icons.image,
+                                          size: isLandscape ? 12 : 16,
+                                          color:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                        ),
+                                      if (actualVoiceNotePresent)
+                                        Icon(
+                                          Icons.mic,
+                                          size: isLandscape ? 12 : 16,
+                                          color:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                        ),
+                                      if (actualChecklistPresent)
+                                        Icon(
+                                          Icons.checklist,
+                                          size: isLandscape ? 12 : 16,
+                                          color:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                        ),
+                                      if (note['folderId'] != null)
+                                        Icon(
+                                          Icons.bookmark,
+                                          size: isLandscape ? 12 : 16,
+                                          color:
+                                              note['folderColor'] != null
+                                                  ? Color(note['folderColor'])
+                                                  : Theme.of(
+                                                    context,
+                                                  ).colorScheme.primary,
+                                        ),
+                                      if (isPinned)
+                                        Icon(
+                                          Icons.push_pin,
+                                          size: isLandscape ? 12 : 16,
+                                          color:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                        ),
+                                    ]
+                                    .where((widget) => widget is Icon)
+                                    .fold<List<Widget>>([], (prev, elm) {
+                                      if (prev.isNotEmpty)
+                                        prev.add(
+                                          SizedBox(width: isLandscape ? 2 : 4),
+                                        );
+                                      prev.add(elm);
+                                      return prev;
+                                    }),
                               ),
-                            if (note['voiceNote'] != null)
-                              Icon(
-                                Icons.mic,
-                                size: 16,
-                                color:
-                                    Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                              ),
-                            if (note['folderId'] != null)
-                              Icon(
-                                Icons.bookmark,
-                                size: 16,
-                                color:
-                                    note['folderColor'] != null
-                                        ? Color(note['folderColor'])
-                                        : Theme.of(context).colorScheme.primary,
-                              ),
-                            if (note['isPinned'] == true)
-                              Icon(
-                                Icons.push_pin,
-                                size: 16,
-                                color:
-                                    Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          note['title']?.toString() ?? 'Untitled',
-                          style: Theme.of(
-                            context,
-                          ).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        if (reminder != null)
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.alarm,
-                                size: 14,
-                                color:
-                                    reminder.isBefore(DateTime.now())
-                                        ? Theme.of(context).colorScheme.error
-                                        : Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  DateFormat(
-                                    'MMM dd, yyyy hh:mm a',
-                                  ).format(reminder),
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.bodySmall?.copyWith(
-                                    fontSize: 12,
-                                    color:
-                                        reminder.isBefore(DateTime.now())
-                                            ? Theme.of(
-                                              context,
-                                            ).colorScheme.error
-                                            : Theme.of(
-                                              context,
-                                            ).colorScheme.onSurfaceVariant,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            if (actualTitlePresent)
+                              Text(
+                                note['title']?.toString() ?? 'Untitled',
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: isLandscape ? 14 : 16,
+                                  fontFamily: note['fontFamily'] ?? 'Roboto',
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                            ],
-                          ),
-                        if (labels.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Wrap(
-                              spacing: 4,
-                              runSpacing: 4,
-                              children:
-                                  labels.map<Widget>((label) {
-                                    return Chip(
-                                      padding: EdgeInsets.zero,
-                                      labelPadding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                      ),
-                                      materialTapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                      label: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.label_important,
-                                            size: 12,
-                                            color:
-                                                Theme.of(
+                            if (actualReminderPresent)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: ClipRect(
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.alarm,
+                                        size: isLandscape ? 10 : 14,
+                                        color:
+                                            reminder!.isBefore(DateTime.now())
+                                                ? Theme.of(
+                                                  context,
+                                                ).colorScheme.error
+                                                : Theme.of(
                                                   context,
                                                 ).colorScheme.onSurfaceVariant,
-                                          ),
-                                          const SizedBox(width: 2),
-                                          Text(
-                                            label,
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.bodySmall?.copyWith(
-                                              fontSize: 10,
-                                              color:
-                                                  Theme.of(context)
-                                                      .colorScheme
-                                                      .onPrimaryContainer,
-                                            ),
-                                          ),
-                                        ],
                                       ),
-                                      backgroundColor:
-                                          Theme.of(
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          DateFormat(
+                                            'MMM dd, yyyy hh:mm a',
+                                          ).format(reminder),
+                                          style: Theme.of(
                                             context,
-                                          ).colorScheme.primaryContainer,
-                                    );
-                                  }).toList(),
-                            ),
-                          ),
-                        const SizedBox(height: 4),
-                        Expanded(
-                          child: Builder(
-                            builder: (context) {
-                              final contentList =
-                                  (note['contentJson'] as List<dynamic>?)
-                                      ?.map((e) => Map<String, dynamic>.from(e))
-                                      .toList();
-                              if (contentList == null || contentList.isEmpty) {
-                                return Text(
-                                  'No content',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.bodyMedium?.copyWith(
-                                    fontSize: 14,
-                                    color:
-                                        Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                  ),
-                                );
-                              }
-                              return ListView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: contentList.length,
-                                itemBuilder: (context, idx) {
-                                  final item = contentList[idx];
-                                  final checklistItems =
-                                      item['checklistItems']
-                                          as List<dynamic>? ??
-                                      [];
-                                  final hasChecklist =
-                                      checklistItems.isNotEmpty;
-                                  if (hasChecklist) {
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children:
-                                          checklistItems.take(3).map((task) {
-                                            final checked =
-                                                task['checked'] == true;
-                                            final text = task['text'] ?? '';
-                                            return Row(
-                                              children: [
-                                                Checkbox(
-                                                  value: checked,
-                                                  onChanged: null,
-                                                  visualDensity:
-                                                      VisualDensity.compact,
-                                                  activeColor:
-                                                      Theme.of(
-                                                        context,
-                                                      ).colorScheme.primary,
-                                                  side: BorderSide(
-                                                    color:
-                                                        checked
-                                                            ? Theme.of(context)
-                                                                .colorScheme
-                                                                .primary
-                                                            : Theme.of(context)
-                                                                .colorScheme
-                                                                .onSurfaceVariant,
-                                                    width: 2,
-                                                  ),
-                                                ),
-                                                Expanded(
-                                                  child: Text(
-                                                    text,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: Theme.of(
+                                          ).textTheme.bodySmall?.copyWith(
+                                            fontSize: isLandscape ? 10 : 12,
+                                            color:
+                                                reminder.isBefore(
+                                                      DateTime.now(),
+                                                    )
+                                                    ? Theme.of(
                                                       context,
-                                                    ).textTheme.bodyMedium?.copyWith(
-                                                      fontSize:
-                                                          (item['fontSize'] !=
-                                                                  null)
-                                                              ? (item['fontSize']
-                                                                      as num)
-                                                                  .toDouble()
-                                                              : 14,
-                                                      fontFamily:
-                                                          item['fontFamily'] ??
-                                                          'Roboto',
-                                                      fontWeight:
-                                                          (item['bold'] == true)
-                                                              ? FontWeight.bold
-                                                              : FontWeight
-                                                                  .normal,
-                                                      fontStyle:
-                                                          (item['italic'] ==
-                                                                  true)
-                                                              ? FontStyle.italic
-                                                              : FontStyle
-                                                                  .normal,
-                                                      decoration: TextDecoration.combine([
-                                                        if (item['underline'] ==
-                                                            true)
-                                                          TextDecoration
-                                                              .underline,
-                                                        if (item['strikethrough'] ==
-                                                                true ||
-                                                            checked)
-                                                          TextDecoration
-                                                              .lineThrough,
-                                                      ]),
-                                                      color:
-                                                          checked
-                                                              ? Theme.of(
-                                                                    context,
-                                                                  )
-                                                                  .colorScheme
-                                                                  .primary
-                                                              : Theme.of(
-                                                                    context,
-                                                                  )
-                                                                  .textTheme
-                                                                  .bodyMedium
-                                                                  ?.color,
-                                                    ),
-                                                  ),
+                                                    ).colorScheme.error
+                                                    : Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurfaceVariant,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            if (actualLabelsPresent)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children:
+                                      labels.take(2).map<Widget>((label) {
+                                        return Chip(
+                                          padding: EdgeInsets.zero,
+                                          labelPadding:
+                                              const EdgeInsets.symmetric(
+                                                horizontal: 6,
+                                              ),
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          label: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.label_important,
+                                                size: isLandscape ? 10 : 12,
+                                                color:
+                                                    Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurfaceVariant,
+                                              ),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                label,
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall?.copyWith(
+                                                  fontSize:
+                                                      isLandscape ? 10 : 12,
+                                                  color:
+                                                      Theme.of(context)
+                                                          .colorScheme
+                                                          .onPrimaryContainer,
                                                 ),
-                                              ],
-                                            );
-                                          }).toList(),
-                                    );
-                                  } else {
-                                    return Text(
-                                      item['text'] ?? '',
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium?.copyWith(
-                                        fontSize:
-                                            (item['fontSize'] != null)
-                                                ? (item['fontSize'] as num)
-                                                    .toDouble()
-                                                : 14,
-                                        fontFamily:
-                                            item['fontFamily'] ?? 'Roboto',
-                                        fontWeight:
-                                            (item['bold'] == true)
-                                                ? FontWeight.bold
-                                                : FontWeight.normal,
-                                        fontStyle:
-                                            (item['italic'] == true)
-                                                ? FontStyle.italic
-                                                : FontStyle.normal,
-                                        decoration: TextDecoration.combine([
-                                          if (item['underline'] == true)
-                                            TextDecoration.underline,
-                                          if (item['strikethrough'] == true)
-                                            TextDecoration.lineThrough,
-                                        ]),
+                                              ),
+                                            ],
+                                          ),
+                                          backgroundColor:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.primaryContainer,
+                                        );
+                                      }).toList(),
+                                ),
+                              ),
+                            if (actualVoiceNotePresent)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: ClipRect(
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.mic,
+                                        size: isLandscape ? 10 : 14,
                                         color:
                                             Theme.of(
                                               context,
-                                            ).textTheme.bodyMedium?.color,
+                                            ).colorScheme.primary,
                                       ),
-                                    );
-                                  }
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                        if (imagePaths.isNotEmpty)
-                          SizedBox(
-                            height: 80,
-                            child: ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: imagePaths.length,
-                              itemBuilder: (context, imgIndex) {
-                                final imgPath = imagePaths[imgIndex];
-                                return Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.file(
-                                      File(imgPath),
-                                      width: 80,
-                                      height: 80,
-                                      fit: BoxFit.cover,
-                                      errorBuilder:
-                                          (context, error, stackTrace) => Icon(
-                                            Icons.broken_image,
-                                            size: 80,
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          'Voice note attached',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall?.copyWith(
+                                            fontSize: isLandscape ? 10 : 12,
                                             color:
                                                 Theme.of(
                                                   context,
                                                 ).colorScheme.onSurfaceVariant,
                                           ),
-                                    ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                );
-                              },
-                            ),
-                          ),
-                      ],
+                                ),
+                              ),
+                            if (actualTextContent)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Text(
+                                  firstTextItem,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.bodyMedium?.copyWith(
+                                    fontSize: textFontSize,
+                                    fontFamily: textFontFamily,
+                                    fontWeight:
+                                        textIsBold
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                    fontStyle:
+                                        textIsItalic
+                                            ? FontStyle.italic
+                                            : FontStyle.normal,
+                                    decoration: TextDecoration.combine([
+                                      if (textIsUnderline)
+                                        TextDecoration.underline,
+                                      if (textIsStrikethrough)
+                                        TextDecoration.lineThrough,
+                                    ]),
+                                    color:
+                                        Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium?.color,
+                                  ),
+                                  maxLines: isLandscape ? 1 : 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            if (actualChecklistPresent)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children:
+                                      checklists.expand<Widget>((
+                                        checklistData,
+                                      ) {
+                                        final items =
+                                            (checklistData['checklistItems']
+                                                    as List<dynamic>?)
+                                                ?.map(
+                                                  (e) =>
+                                                      Map<String, dynamic>.from(
+                                                        e,
+                                                      ),
+                                                )
+                                                .toList() ??
+                                            [];
+                                        return items.take(isLandscape ? 1 : 3).map<
+                                          Widget
+                                        >((item) {
+                                          final bool isChecked =
+                                              item['checked'] == true;
+                                          final String taskText =
+                                              item['text']?.toString() ?? '';
+                                          if (taskText.isEmpty)
+                                            return const SizedBox.shrink();
+                                          return Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 1.0,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  isChecked
+                                                      ? Icons.check_box
+                                                      : Icons
+                                                          .check_box_outline_blank,
+                                                  size: isLandscape ? 12 : 14,
+                                                  color:
+                                                      Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Flexible(
+                                                  child: Text(
+                                                    taskText,
+                                                    style: Theme.of(
+                                                      context,
+                                                    ).textTheme.bodySmall?.copyWith(
+                                                      fontSize:
+                                                          isLandscape ? 12 : 14,
+                                                      color:
+                                                          Theme.of(context)
+                                                              .colorScheme
+                                                              .onSurfaceVariant,
+                                                      decoration:
+                                                          isChecked
+                                                              ? TextDecoration
+                                                                  .lineThrough
+                                                              : null,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList();
+                                      }).toList(),
+                                ),
+                              ),
+                            if (hasImages && showImagesInCard)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Builder(
+                                  builder: (context) {
+                                    final bool shouldImageExpand =
+                                        !actualTextContent &&
+                                        !actualChecklistPresent &&
+                                        !actualVoiceNotePresent;
+
+                                    Widget imageWidget;
+                                    if (imagePaths.length == 1) {
+                                      imageWidget = ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Container(
+                                          width: double.infinity,
+                                          constraints: BoxConstraints(
+                                            maxHeight:
+                                                shouldImageExpand
+                                                    ? double.infinity
+                                                    : 120,
+                                          ),
+                                          child: Image.file(
+                                            File(imagePaths[0]),
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stackTrace) =>
+                                                    Icon(
+                                                      Icons.broken_image,
+                                                      size: 40,
+                                                      color:
+                                                          Theme.of(context)
+                                                              .colorScheme
+                                                              .onSurfaceVariant,
+                                                    ),
+                                          ),
+                                        ),
+                                      );
+                                    } else {
+                                      imageWidget = GridView.builder(
+                                        shrinkWrap: true,
+                                        physics:
+                                            const NeverScrollableScrollPhysics(),
+                                        gridDelegate:
+                                            SliverGridDelegateWithFixedCrossAxisCount(
+                                              crossAxisCount: 2,
+                                              crossAxisSpacing: 4,
+                                              mainAxisSpacing: 4,
+                                              childAspectRatio: 1,
+                                            ),
+                                        itemCount:
+                                            imagePaths.length > 4
+                                                ? 4
+                                                : imagePaths.length,
+                                        itemBuilder: (context, imgIndex) {
+                                          return ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            child: Image.file(
+                                              File(imagePaths[imgIndex]),
+                                              fit: BoxFit.cover,
+                                              errorBuilder:
+                                                  (
+                                                    context,
+                                                    error,
+                                                    stackTrace,
+                                                  ) => Icon(
+                                                    Icons.broken_image,
+                                                    size: 40,
+                                                    color:
+                                                        Theme.of(context)
+                                                            .colorScheme
+                                                            .onSurfaceVariant,
+                                                  ),
+                                            ),
+                                          );
+                                        },
+                                      );
+                                      if (imagePaths.length > 4) {
+                                        imageWidget = Stack(
+                                          alignment: Alignment.center,
+                                          children: [
+                                            imageWidget,
+                                            Positioned.fill(
+                                              child: Container(
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black
+                                                      .withOpacity(0.3),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                child: Center(
+                                                  child: Text(
+                                                    '+${imagePaths.length - 4}',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 20,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      }
+                                    }
+
+                                    if (shouldImageExpand) {
+                                      return imageWidget;
+                                    } else {
+                                      if (isLandscape &&
+                                          imagePaths.length > 1) {
+                                        return SizedBox(
+                                          height: 75,
+                                          width: double.infinity,
+                                          child: imageWidget,
+                                        );
+                                      } else {
+                                        return Container(
+                                          constraints: BoxConstraints(
+                                            maxHeight:
+                                                (imagePaths.length == 1)
+                                                    ? (isLandscape ? 80 : 120)
+                                                    : 180,
+                                          ),
+                                          width: double.infinity,
+                                          child: imageWidget,
+                                        );
+                                      }
+                                    }
+                                  },
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                if (isSelected)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Icon(
-                      Icons.check_circle,
-                      color: Theme.of(context).colorScheme.primary,
-                      size: 24,
+                  if (isSelected)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Icon(
+                        Icons.check_circle,
+                        color: Theme.of(context).colorScheme.primary,
+                        size: 24,
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 

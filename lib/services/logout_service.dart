@@ -51,7 +51,7 @@ Future<void> showLogoutDialog(BuildContext context) async {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text(
-            '⚠️ You need to be online first before logging out.',
+            'You need to be online first before logging out to ensure that all your PenCraft Pro notes are synced.',
           ),
           backgroundColor:
               Theme.of(context).colorScheme.error, // Use theme's error color
@@ -71,7 +71,7 @@ Future<void> showLogoutDialog(BuildContext context) async {
       );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('✅ Logged out successfully.'),
+          content: const Text('Logged out successfully.'),
           backgroundColor:
               Theme.of(
                 context,

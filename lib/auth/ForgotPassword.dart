@@ -39,7 +39,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.message ?? 'Something went wrong'),
+            content: Text(e.message ?? 'Something went wrong.'),
             backgroundColor: Colors.red,
           ),
         );

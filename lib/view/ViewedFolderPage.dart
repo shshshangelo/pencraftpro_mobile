@@ -1,5 +1,3 @@
-// ignore_for_file: unused_import
-
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +10,7 @@ class ViewedFolderPage extends StatefulWidget {
   final List<String> imagePaths;
   final String? voiceNote;
   final List<String> labels;
+  final DateTime? reminder;
   final String? fontFamily;
   final String? folderId;
   final int? folderColor;
@@ -24,6 +23,7 @@ class ViewedFolderPage extends StatefulWidget {
     required this.imagePaths,
     this.voiceNote,
     required this.labels,
+    this.reminder,
     this.fontFamily,
     this.folderId,
     this.folderColor,
@@ -115,6 +115,8 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -139,6 +141,31 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+            const SizedBox(height: 8),
+            if (widget.reminder != null)
+              Row(
+                children: [
+                  Icon(
+                    Icons.alarm,
+                    size: 20,
+                    color:
+                        widget.reminder!.isBefore(now)
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    DateFormat('MMM dd, yyyy hh:mm a').format(widget.reminder!),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontSize: 14,
+                      color:
+                          widget.reminder!.isBefore(now)
+                              ? Theme.of(context).colorScheme.error
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             const SizedBox(height: 8),
             if (_folderName != null)
               Row(
@@ -208,6 +235,7 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
               final checklistItems =
                   item['checklistItems'] as List<dynamic>? ?? [];
               final hasChecklist = checklistItems.isNotEmpty;
+
               if (hasChecklist) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,35 +303,6 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
                 );
               }
             }),
-            const SizedBox(height: 16),
-            if (widget.imagePaths.isNotEmpty)
-              SizedBox(
-                height: 200,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: widget.imagePaths.length,
-                  itemBuilder: (context, index) {
-                    return GestureDetector(
-                      onTap: () {
-                        _showImageViewer(context, widget.imagePaths, index);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.file(
-                            File(widget.imagePaths[index]),
-                            width: 180,
-                            height: 200,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            const SizedBox(height: 16),
             if (widget.voiceNote != null)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -355,6 +354,45 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
                     ],
                   ),
                 ],
+              ),
+            if (widget.imagePaths.isNotEmpty)
+              Column(
+                children:
+                    widget.imagePaths.map((path) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Stack(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                _showImageViewer(
+                                  context,
+                                  widget.imagePaths,
+                                  widget.imagePaths.indexOf(path),
+                                );
+                              },
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.file(
+                                  File(path),
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  errorBuilder:
+                                      (context, error, stackTrace) => Icon(
+                                        Icons.broken_image,
+                                        size: 40,
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
               ),
           ],
         ),

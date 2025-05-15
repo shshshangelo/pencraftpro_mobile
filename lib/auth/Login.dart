@@ -25,6 +25,7 @@ class _LoginState extends State<Login> {
   bool _rememberMe = false;
   bool _isFirstLogin = true;
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
 
   @override
   void initState() {
@@ -122,7 +123,7 @@ class _LoginState extends State<Login> {
   }
 
   Future<void> _signInWithGoogle() async {
-    setState(() => _isLoading = true);
+    setState(() => _isGoogleLoading = true);
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
       if (googleUser == null) return;
@@ -206,7 +207,7 @@ class _LoginState extends State<Login> {
         context,
       ).showSnackBar(SnackBar(content: Text(errorMessage)));
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _isGoogleLoading = false);
     }
   }
 
@@ -394,9 +395,16 @@ class _LoginState extends State<Login> {
   Widget _buildGoogleSignInButton() => SizedBox(
     width: double.infinity,
     child: OutlinedButton.icon(
-      icon: const Icon(Icons.g_mobiledata, size: 28),
-      label: Text(_isLoading ? 'Signing in...' : 'Continue with Google'),
-      onPressed: _isLoading ? null : _signInWithGoogle,
+      icon:
+          _isGoogleLoading
+              ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+              : const Icon(Icons.g_mobiledata, size: 28),
+      label: Text(_isGoogleLoading ? 'Signing in...' : 'Continue with Google'),
+      onPressed: _isGoogleLoading ? null : _signInWithGoogle,
     ),
   );
 
