@@ -290,6 +290,7 @@ class _AccountSettingsState extends State<AccountSettings> {
     final now = DateTime.now().millisecondsSinceEpoch;
     const limit = 7 * 24 * 60 * 60 * 1000;
 
+    // Uncomment the 7-day limit check to re-enable the restriction
     if (lastChange != null && now - lastChange < limit) {
       debugPrint('Profile photo change limit reached');
       if (!mounted) return;
@@ -361,6 +362,7 @@ class _AccountSettingsState extends State<AccountSettings> {
     final now = DateTime.now().millisecondsSinceEpoch;
     const limit = 7 * 24 * 60 * 60 * 1000;
 
+    // Uncomment the 7-day limit check to re-enable the restriction
     if (lastChange != null && now - lastChange < limit) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -662,6 +664,9 @@ class _AccountSettingsState extends State<AccountSettings> {
   }
 
   void _showProfileOptions() {
+    final hasProfilePicture =
+        (_profilePictureUrl != null && _profilePictureUrl!.isNotEmpty) ||
+        _customProfileImage != null;
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -706,23 +711,24 @@ class _AccountSettingsState extends State<AccountSettings> {
                 _takeProfilePicture();
               },
             ),
-            ListTile(
-              leading: Icon(
-                Icons.delete,
-                size: 22,
-                color: Theme.of(context).colorScheme.onSurface,
+            if (hasProfilePicture)
+              ListTile(
+                leading: Icon(
+                  Icons.delete,
+                  size: 22,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'Remove Profile Photo',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontSize: 14),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _removeProfileImage();
+                },
               ),
-              title: Text(
-                'Remove Profile Photo',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(fontSize: 14),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _removeProfileImage();
-              },
-            ),
             const SizedBox(height: 10),
           ],
         );
@@ -843,13 +849,46 @@ class _AccountSettingsState extends State<AccountSettings> {
     }
   }
 
-  void _verifyId() {
+  Future<bool> _isIdDuplicate(String id) async {
+    try {
+      final querySnapshot =
+          await FirebaseFirestore.instance
+              .collection('users')
+              .where('idNumber', isEqualTo: id)
+              .get();
+
+      return querySnapshot.docs.isNotEmpty;
+    } catch (e) {
+      debugPrint('Error checking for duplicate ID: $e');
+      return false;
+    }
+  }
+
+  void _verifyId() async {
     final id = _idController.text.trim();
     if (id.length != 11 || !RegExp(r'^\d{11}$').hasMatch(id)) {
       setState(() {
         _idNumberErrorText = 'Student ID No. must be exactly 11 digits.';
       });
       debugPrint('Student ID verification failed: invalid format');
+      return;
+    }
+
+    // Check for duplicate ID
+    final isDuplicate = await _isIdDuplicate(id);
+    if (isDuplicate) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'This Student ID No. is already registered.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+        ),
+      );
       return;
     }
 
@@ -918,13 +957,31 @@ class _AccountSettingsState extends State<AccountSettings> {
     );
   }
 
-  void _verifyTeacherId() {
+  void _verifyTeacherId() async {
     final teacherId = _teacherIdController.text.trim();
     if (teacherId.length != 11 || !RegExp(r'^\d{11}$').hasMatch(teacherId)) {
       setState(() {
         _teacherIdErrorText = 'Teacher ID No. must be exactly 11 digits.';
       });
       debugPrint('Teacher ID verification failed: invalid format');
+      return;
+    }
+
+    // Check for duplicate ID
+    final isDuplicate = await _isIdDuplicate(teacherId);
+    if (isDuplicate) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'This Teacher ID No. is already registered.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+        ),
+      );
       return;
     }
 
@@ -1077,40 +1134,7 @@ class _AccountSettingsState extends State<AccountSettings> {
   }
 
   Future<bool> _onWillPop() async {
-    if (!_isProfileSetupComplete()) {
-      final shouldPop = await showDialog<bool>(
-        context: context,
-        builder:
-            (context) => AlertDialog(
-              backgroundColor: Theme.of(context).colorScheme.surface,
-              title: Text(
-                'Incomplete Profile Setup',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              content: Text(
-                'Please complete your profile setup before leaving this page.\n\nRequired steps:\n${!_isNameVerified && !_isGoogleUser ? '• Set your full name\n' : ''}${!_isRoleSelected ? '• Select your role\n' : ''}${!_isIdVerified ? '• Verify your ID number' : ''}',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text(
-                    'Stay',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-      );
-      return shouldPop ?? false;
-    }
-    return true;
+    return false;
   }
 
   @override
@@ -1546,6 +1570,8 @@ class _AccountSettingsState extends State<AccountSettings> {
                 TextField(
                   controller: _idController,
                   keyboardType: TextInputType.number,
+                  maxLength: 11,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   style: TextStyle(
                     fontSize: 15,
                     color: Theme.of(context).colorScheme.onSurface,
@@ -1566,6 +1592,7 @@ class _AccountSettingsState extends State<AccountSettings> {
                       vertical: 8,
                       horizontal: 12,
                     ),
+                    counterText: '',
                     suffixIcon: IconButton(
                       icon: Icon(
                         Icons.check,
@@ -1580,6 +1607,8 @@ class _AccountSettingsState extends State<AccountSettings> {
                 TextField(
                   controller: _teacherIdController,
                   keyboardType: TextInputType.number,
+                  maxLength: 11,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   style: TextStyle(
                     fontSize: 15,
                     color: Theme.of(context).colorScheme.onSurface,
@@ -1600,6 +1629,7 @@ class _AccountSettingsState extends State<AccountSettings> {
                       vertical: 8,
                       horizontal: 12,
                     ),
+                    counterText: '',
                     suffixIcon: IconButton(
                       icon: Icon(
                         Icons.check,
@@ -2030,6 +2060,7 @@ class _AccountSettingsState extends State<AccountSettings> {
       );
     } catch (e) {
       if (!mounted) return;
+      /*
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -2041,6 +2072,7 @@ class _AccountSettingsState extends State<AccountSettings> {
           backgroundColor: Theme.of(context).colorScheme.errorContainer,
         ),
       );
+      */
     }
   }
 }

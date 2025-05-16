@@ -1,9 +1,57 @@
 import 'package:flutter/material.dart';
 import '../drawing/DrawingPage.dart';
 import '../drawing/SavedDrawingPage.dart';
+import '../services/DrawingSyncService.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
-class DrawingDashboard extends StatelessWidget {
+class DrawingDashboard extends StatefulWidget {
   const DrawingDashboard({super.key});
+
+  @override
+  State<DrawingDashboard> createState() => _DrawingDashboardState();
+}
+
+class _DrawingDashboardState extends State<DrawingDashboard> {
+  bool _isSyncing = false;
+  bool _isOnline = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkConnectivity();
+    _startAutoSync();
+  }
+
+  Future<void> _checkConnectivity() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    setState(() {
+      _isOnline = connectivityResult != ConnectivityResult.none;
+    });
+  }
+
+  void _startAutoSync() {
+    Connectivity().onConnectivityChanged.listen((result) {
+      setState(() {
+        _isOnline = result != ConnectivityResult.none;
+      });
+      if (_isOnline) {
+        _syncNow();
+      }
+    });
+  }
+
+  Future<void> _syncNow() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+
+    try {
+      await DrawingSyncService.syncNow(context);
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncing = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +88,7 @@ class DrawingDashboard extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              'Welcome to Your Drawing Dashboard',
+              'Welcome to your Drawing Dashboard',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'Satisfy',
@@ -93,12 +141,14 @@ class DrawingDashboard extends StatelessWidget {
 
   // Landscape version, same layout pero mas compressed if needed
   Widget _buildLandscapeLayout(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 600),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: _buildPortraitLayout(context),
+    return SingleChildScrollView(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: _buildPortraitLayout(context),
+          ),
         ),
       ),
     );

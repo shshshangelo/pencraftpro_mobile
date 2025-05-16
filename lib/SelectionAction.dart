@@ -134,6 +134,9 @@ class _SelectionActionState extends State<SelectionAction> {
 
   @override
   Widget build(BuildContext context) {
+    final isPortrait =
+        MediaQuery.of(context).orientation == Orientation.portrait;
+
     // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () => _onWillPop(context),
@@ -144,61 +147,115 @@ class _SelectionActionState extends State<SelectionAction> {
           backgroundColor: Theme.of(context).colorScheme.primary,
           foregroundColor: Colors.white,
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(10.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(height: 1),
-              Text(
-                'Hi there, What would you like to do?',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Satisfy',
-                  fontSize: 25,
-                  fontWeight: FontWeight.w500,
-                  color: Theme.of(context).colorScheme.primary,
+        body:
+            isPortrait
+                ? _buildPortraitLayout(context)
+                : _buildLandscapeLayout(context),
+      ),
+    );
+  }
+
+  Widget _buildPortraitLayout(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Image.asset(
+              'assets/aclc.png',
+              width: 250,
+              height: 200,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Hi there, What would you like to do?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Satisfy',
+                fontSize: 28,
+                fontWeight: FontWeight.w500,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            GridView.count(
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _buildActionCard(
+                  context,
+                  icon: Icons.note_alt_outlined,
+                  title: 'Take Notes',
+                  onTap: () => _handleRestrictedAction(context, '/notes'),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.note_alt_outlined),
-                      label: const Text('Take Notes'),
-                      onPressed: () {
-                        _handleRestrictedAction(context, '/notes');
-                      },
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.draw_rounded),
-                      label: const Text('Start Drawing'),
-                      onPressed: () {
-                        _handleRestrictedAction(context, '/drawing');
-                      },
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                _buildActionCard(
+                  context,
+                  icon: Icons.draw_rounded,
+                  title: 'Start Drawing',
+                  onTap: () => _handleRestrictedAction(context, '/drawing'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLandscapeLayout(BuildContext context) {
+    return SingleChildScrollView(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: _buildPortraitLayout(context),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionCard(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    return Card(
+      elevation: 4,
+      color: isDarkMode ? Colors.red.shade900 : Colors.red,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 48,
+              color: isDarkMode ? Colors.white : Colors.white,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: isDarkMode ? Colors.white : Colors.white,
+              ),
+            ),
+          ],
         ),
       ),
     );

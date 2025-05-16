@@ -313,212 +313,224 @@ class _FoldersState extends State<Folders> {
           return f.name.toLowerCase().contains(q);
         }).toList();
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Theme.of(context).colorScheme.onPrimary,
-        title:
-            isSelecting
-                ? Text(
-                  '${selectedFolderIds.length} selected',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    fontSize: 20,
-                  ),
-                )
-                : isSearching
-                ? TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search folders...',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onPrimary.withOpacity(0.6),
-                      fontSize: 16,
+    return WillPopScope(
+      onWillPop: () async {
+        // Prevent going back
+        return false;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          title:
+              isSelecting
+                  ? Text(
+                    '${selectedFolderIds.length} selected',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onPrimary,
+                      fontSize: 20,
                     ),
-                  ),
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                  autofocus: true,
-                  onChanged: (_) => setState(() {}),
-                )
-                : Text(
-                  'Folders',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    fontSize: 20,
-                  ),
-                ),
-        actions:
-            isSelecting
-                ? [
-                  IconButton(
-                    icon: const Icon(Icons.select_all),
-                    onPressed: _selectAllFolders,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () {
-                      setState(() {
-                        isSelecting = false;
-                        selectedFolderIds.clear();
-                      });
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete),
-                    onPressed:
-                        selectedFolderIds.isEmpty
-                            ? null
-                            : _deleteSelectedFolders,
-                  ),
-                ]
-                : [
-                  IconButton(
-                    icon: Icon(isSearching ? Icons.close : Icons.search),
-                    onPressed: () {
-                      setState(() {
-                        isSearching = !isSearching;
-                        if (!isSearching) _searchController.clear();
-                      });
-                    },
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        isSelecting = true;
-                        isSearching = false;
-                        _searchController.clear();
-                      });
-                    },
-                    child: Text(
-                      'Edit',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.onPrimary,
-                        fontSize: 20,
+                  )
+                  : isSearching
+                  ? TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search folders...',
+                      border: InputBorder.none,
+                      hintStyle: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onPrimary.withOpacity(0.6),
+                        fontSize: 16,
                       ),
                     ),
-                  ),
-                ],
-      ),
-      drawer: _buildDrawer(),
-      body:
-          filtered.isEmpty
-              ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isSearching ? Icons.search : Icons.folder,
-                      size: 100,
-                      color: Theme.of(context).colorScheme.secondary,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onPrimary,
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      isSearching ? 'No matching folders' : 'No folders yet',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontSize: 15,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    autofocus: true,
+                    onChanged: (_) => setState(() {}),
+                  )
+                  : Text(
+                    'Folders',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onPrimary,
+                      fontSize: 20,
+                    ),
+                  ),
+          actions:
+              isSelecting
+                  ? [
+                    IconButton(
+                      icon: const Icon(Icons.select_all),
+                      onPressed: _selectAllFolders,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        setState(() {
+                          isSelecting = false;
+                          selectedFolderIds.clear();
+                        });
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete),
+                      onPressed:
+                          selectedFolderIds.isEmpty
+                              ? null
+                              : _deleteSelectedFolders,
+                    ),
+                  ]
+                  : [
+                    IconButton(
+                      icon: Icon(isSearching ? Icons.close : Icons.search),
+                      onPressed: () {
+                        setState(() {
+                          isSearching = !isSearching;
+                          if (!isSearching) _searchController.clear();
+                        });
+                      },
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          isSelecting = true;
+                          isSearching = false;
+                          _searchController.clear();
+                        });
+                      },
+                      child: Text(
+                        'Edit',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.onPrimary,
+                          fontSize: 20,
+                        ),
                       ),
                     ),
                   ],
-                ),
-              )
-              : ListView.builder(
-                padding: const EdgeInsets.all(8),
-                itemCount: filtered.length,
-                itemBuilder: (ctx, i) {
-                  final folder = filtered[i];
-                  final color = _folderColors[i % _folderColors.length];
-                  final isSelected = selectedFolderIds.contains(folder.id);
-                  return GestureDetector(
-                    onTap: () {
-                      if (isSelecting) {
-                        _toggleSelectFolder(folder.id);
-                      } else {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ViewFolderPage(folderId: folder.id),
-                          ),
-                        );
-                      }
-                    },
-                    child: Card(
-                      color: color,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side:
-                            isSelected
-                                ? BorderSide(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  width: 2,
-                                )
-                                : BorderSide.none,
+        ),
+        drawer: _buildDrawer(),
+        body:
+            filtered.isEmpty
+                ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isSearching ? Icons.search : Icons.folder,
+                        size: 100,
+                        color: Theme.of(context).colorScheme.secondary,
                       ),
-                      margin: const EdgeInsets.symmetric(
-                        vertical: 6,
-                        horizontal: 8,
+                      const SizedBox(height: 8),
+                      Text(
+                        isSearching ? 'No matching folders' : 'No folders yet',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontSize: 15,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                      elevation: 2,
-                      child: Stack(
-                        children: [
-                          ListTile(
-                            leading: Icon(
-                              Icons.folder,
-                              color: Theme.of(context).colorScheme.primary,
+                    ],
+                  ),
+                )
+                : ListView.builder(
+                  padding: const EdgeInsets.all(8),
+                  itemCount: filtered.length,
+                  itemBuilder: (ctx, i) {
+                    final folder = filtered[i];
+                    final color = _folderColors[i % _folderColors.length];
+                    final isSelected = selectedFolderIds.contains(folder.id);
+                    return GestureDetector(
+                      onTap: () {
+                        if (isSelecting) {
+                          _toggleSelectFolder(folder.id);
+                        } else {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder:
+                                  (_) => ViewFolderPage(folderId: folder.id),
                             ),
-                            title: Text(
-                              folder.name,
-                              style: Theme.of(
-                                context,
-                              ).textTheme.bodyMedium?.copyWith(fontSize: 14),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            trailing:
-                                isSelecting
-                                    ? IconButton(
-                                      icon: const Icon(Icons.edit, size: 20),
-                                      onPressed:
-                                          () => _showRenameFolderDialog(folder),
-                                    )
-                                    : null,
-                          ),
-
-                          if (isSelected)
-                            Positioned(
-                              top: 8,
-                              right: 8,
-                              child: Icon(
-                                Icons.check_circle,
+                          );
+                        }
+                      },
+                      child: Card(
+                        color: color,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side:
+                              isSelected
+                                  ? BorderSide(
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
+                                    width: 2,
+                                  )
+                                  : BorderSide.none,
+                        ),
+                        margin: const EdgeInsets.symmetric(
+                          vertical: 6,
+                          horizontal: 8,
+                        ),
+                        elevation: 2,
+                        child: Stack(
+                          children: [
+                            ListTile(
+                              leading: Icon(
+                                Icons.folder,
                                 color: Theme.of(context).colorScheme.primary,
-                                size: 24,
                               ),
+                              title: Text(
+                                folder.name,
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodyMedium?.copyWith(fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing:
+                                  isSelecting
+                                      ? IconButton(
+                                        icon: const Icon(Icons.edit, size: 20),
+                                        onPressed:
+                                            () =>
+                                                _showRenameFolderDialog(folder),
+                                      )
+                                      : null,
                             ),
-                        ],
+
+                            if (isSelected)
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Icon(
+                                  Icons.check_circle,
+                                  color: Theme.of(context).colorScheme.primary,
+                                  size: 24,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _createNewFolder,
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Theme.of(context).colorScheme.onPrimary,
-        child: const Icon(Icons.create_new_folder),
-      ),
-      bottomNavigationBar: BottomAppBar(
-        color: Theme.of(context).colorScheme.error,
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 10.0,
-        child: IconButton(
-          icon: Icon(Icons.home, color: Theme.of(context).colorScheme.onError),
-          iconSize: 32,
-          onPressed: () => Navigator.pushNamed(context, '/select'),
-          tooltip: 'Go to Home',
+                    );
+                  },
+                ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _createNewFolder,
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          child: const Icon(Icons.create_new_folder),
+        ),
+        bottomNavigationBar: BottomAppBar(
+          color: Theme.of(context).colorScheme.error,
+          shape: const CircularNotchedRectangle(),
+          notchMargin: 10.0,
+          child: IconButton(
+            icon: Icon(
+              Icons.home,
+              color: Theme.of(context).colorScheme.onError,
+            ),
+            iconSize: 32,
+            onPressed: () => Navigator.pushNamed(context, '/select'),
+            tooltip: 'Go to Home',
+          ),
         ),
       ),
     );

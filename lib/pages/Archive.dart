@@ -104,6 +104,7 @@ class _ArchiveState extends State<Archive> {
                     color: Theme.of(
                       context,
                     ).colorScheme.onPrimary.withOpacity(0.6),
+                    fontSize: 16,
                   ),
                 ),
                 style: TextStyle(
@@ -262,30 +263,26 @@ class _ArchiveState extends State<Archive> {
 
   Widget _buildBody(List<Map<String, dynamic>> notes) {
     if (notes.isEmpty) {
-      return SizedBox(
-        height: MediaQuery.of(context).size.height * 0.6,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isSearching ? Icons.search : Icons.archive,
-                size: 100,
-                color: Theme.of(context).colorScheme.secondary,
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isSearching ? Icons.search : Icons.archive,
+              size: 100,
+              color: Theme.of(context).colorScheme.secondary,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isSearching
+                  ? 'No matching archived notes'
+                  : 'Archived notes appear here',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontSize: 15,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(height: 8),
-              Text(
-                isSearching
-                    ? 'No matching archived notes'
-                    : 'Archived notes appear here',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontSize: 15,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }
@@ -520,13 +517,15 @@ class _ArchiveState extends State<Archive> {
                                                 context,
                                               ).colorScheme.onSurfaceVariant,
                                         ),
-                                    ].where((widget) => widget is Icon).fold<
-                                      List<Widget>
-                                    >([], (prev, elm) {
-                                      if (prev.isNotEmpty)
+                                    ].whereType<Icon>().fold<List<Widget>>([], (
+                                      prev,
+                                      elm,
+                                    ) {
+                                      if (prev.isNotEmpty) {
                                         prev.add(
                                           SizedBox(width: isLandscape ? 2 : 4),
                                         );
+                                      }
                                       prev.add(elm);
                                       return prev;
                                     }),
@@ -646,7 +645,7 @@ class _ArchiveState extends State<Archive> {
                                             Icons.alarm,
                                             size: isLandscape ? 10 : 12,
                                             color:
-                                                reminder!.isBefore(now)
+                                                reminder.isBefore(now)
                                                     ? Theme.of(
                                                       context,
                                                     ).colorScheme.error
@@ -779,8 +778,9 @@ class _ArchiveState extends State<Archive> {
                                               final String taskText =
                                                   item['text']?.toString() ??
                                                   '';
-                                              if (taskText.isEmpty)
+                                              if (taskText.isEmpty) {
                                                 return const SizedBox.shrink();
+                                              }
                                               return Padding(
                                                 padding:
                                                     const EdgeInsets.symmetric(

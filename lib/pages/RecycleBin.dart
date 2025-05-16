@@ -583,7 +583,7 @@ class _RecycleBinState extends State<RecycleBin> {
 
     return WillPopScope(
       onWillPop: () async {
-        Navigator.pushNamed(context, '/notes');
+        // Prevent going back
         return false;
       },
       child: OrientationBuilder(
@@ -1054,63 +1054,65 @@ class _RecycleBinState extends State<RecycleBin> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                      if (hasImages)
-                                        Icon(
-                                          Icons.image,
-                                          size: isLandscape ? 12 : 16,
-                                          color:
-                                              Theme.of(
+                                  if (hasImages)
+                                    Icon(
+                                      Icons.image,
+                                      size: isLandscape ? 12 : 16,
+                                      color:
+                                          Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  if (actualVoiceNotePresent)
+                                    Icon(
+                                      Icons.mic,
+                                      size: isLandscape ? 12 : 16,
+                                      color:
+                                          Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  if (actualChecklistPresent)
+                                    Icon(
+                                      Icons.checklist,
+                                      size: isLandscape ? 12 : 16,
+                                      color:
+                                          Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  if (note['folderId'] != null)
+                                    Icon(
+                                      Icons.bookmark,
+                                      size: isLandscape ? 12 : 16,
+                                      color:
+                                          note['folderColor'] != null
+                                              ? Color(note['folderColor'])
+                                              : Theme.of(
                                                 context,
-                                              ).colorScheme.onSurfaceVariant,
-                                        ),
-                                      if (actualVoiceNotePresent)
-                                        Icon(
-                                          Icons.mic,
-                                          size: isLandscape ? 12 : 16,
-                                          color:
-                                              Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                        ),
-                                      if (actualChecklistPresent)
-                                        Icon(
-                                          Icons.checklist,
-                                          size: isLandscape ? 12 : 16,
-                                          color:
-                                              Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                        ),
-                                      if (note['folderId'] != null)
-                                        Icon(
-                                          Icons.bookmark,
-                                          size: isLandscape ? 12 : 16,
-                                          color:
-                                              note['folderColor'] != null
-                                                  ? Color(note['folderColor'])
-                                                  : Theme.of(
-                                                    context,
-                                                  ).colorScheme.primary,
-                                        ),
-                                      if (isPinned)
-                                        Icon(
-                                          Icons.push_pin,
-                                          size: isLandscape ? 12 : 16,
-                                          color:
-                                              Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                        ),
-                                    ]
-                                    .where((widget) => widget is Icon)
-                                    .fold<List<Widget>>([], (prev, elm) {
-                                      if (prev.isNotEmpty)
-                                        prev.add(
-                                          SizedBox(width: isLandscape ? 2 : 4),
-                                        );
-                                      prev.add(elm);
-                                      return prev;
-                                    }),
+                                              ).colorScheme.primary,
+                                    ),
+                                  if (isPinned)
+                                    Icon(
+                                      Icons.push_pin,
+                                      size: isLandscape ? 12 : 16,
+                                      color:
+                                          Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                    ),
+                                ].whereType<Icon>().fold<List<Widget>>([], (
+                                  prev,
+                                  elm,
+                                ) {
+                                  if (prev.isNotEmpty) {
+                                    prev.add(
+                                      SizedBox(width: isLandscape ? 2 : 4),
+                                    );
+                                  }
+                                  prev.add(elm);
+                                  return prev;
+                                }),
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -1137,7 +1139,7 @@ class _RecycleBinState extends State<RecycleBin> {
                                         Icons.alarm,
                                         size: isLandscape ? 10 : 14,
                                         color:
-                                            reminder!.isBefore(DateTime.now())
+                                            reminder.isBefore(DateTime.now())
                                                 ? Theme.of(
                                                   context,
                                                 ).colorScheme.error
@@ -1321,8 +1323,9 @@ class _RecycleBinState extends State<RecycleBin> {
                                               item['checked'] == true;
                                           final String taskText =
                                               item['text']?.toString() ?? '';
-                                          if (taskText.isEmpty)
+                                          if (taskText.isEmpty) {
                                             return const SizedBox.shrink();
+                                          }
                                           return Padding(
                                             padding: const EdgeInsets.symmetric(
                                               vertical: 1.0,

@@ -318,15 +318,16 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                                           .colorScheme
                                                           .onSurfaceVariant,
                                                 ),
-                                            ].where((widget) => widget is Icon).fold<
+                                            ].whereType<Icon>().fold<
                                               List<Widget>
                                             >([], (prev, elm) {
-                                              if (prev.isNotEmpty)
+                                              if (prev.isNotEmpty) {
                                                 prev.add(
                                                   SizedBox(
                                                     width: isLandscape ? 2 : 4,
                                                   ),
                                                 );
+                                              }
                                               prev.add(elm);
                                               return prev;
                                             }),
@@ -477,7 +478,7 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                                     Icons.alarm,
                                                     size: isLandscape ? 10 : 12,
                                                     color:
-                                                        reminder!.isBefore(now)
+                                                        reminder.isBefore(now)
                                                             ? Theme.of(
                                                               context,
                                                             ).colorScheme.error
@@ -641,8 +642,9 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                                           item['text']
                                                               ?.toString() ??
                                                           '';
-                                                      if (taskText.isEmpty)
+                                                      if (taskText.isEmpty) {
                                                         return const SizedBox.shrink();
+                                                      }
                                                       return Padding(
                                                         padding:
                                                             const EdgeInsets.symmetric(

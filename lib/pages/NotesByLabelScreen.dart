@@ -319,15 +319,16 @@ class _NotesByLabelScreenState extends State<NotesByLabelScreen> {
                                                           .colorScheme
                                                           .onSurfaceVariant,
                                                 ),
-                                            ].where((widget) => widget is Icon).fold<
+                                            ].whereType<Icon>().fold<
                                               List<Widget>
                                             >([], (prev, elm) {
-                                              if (prev.isNotEmpty)
+                                              if (prev.isNotEmpty) {
                                                 prev.add(
                                                   SizedBox(
                                                     width: isLandscape ? 2 : 4,
                                                   ),
                                                 );
+                                              }
                                               prev.add(elm);
                                               return prev;
                                             }),
@@ -476,7 +477,7 @@ class _NotesByLabelScreenState extends State<NotesByLabelScreen> {
                                                     Icons.alarm,
                                                     size: isLandscape ? 10 : 12,
                                                     color:
-                                                        reminder!.isBefore(
+                                                        reminder.isBefore(
                                                               DateTime.now(),
                                                             )
                                                             ? Theme.of(
@@ -642,8 +643,9 @@ class _NotesByLabelScreenState extends State<NotesByLabelScreen> {
                                                           item['text']
                                                               ?.toString() ??
                                                           '';
-                                                      if (taskText.isEmpty)
+                                                      if (taskText.isEmpty) {
                                                         return const SizedBox.shrink();
+                                                      }
                                                       return Padding(
                                                         padding:
                                                             const EdgeInsets.symmetric(

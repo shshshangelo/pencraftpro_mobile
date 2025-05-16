@@ -1,8 +1,11 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pencraftpro/drawing/DrawingPage.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SavedDrawingsPage extends StatefulWidget {
   const SavedDrawingsPage({super.key});
@@ -68,10 +71,26 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
     final drawingData = _savedDrawings[index].split('|');
     final fileName = drawingData[0];
 
+    // Delete local file
     final path = await _getImagePath(fileName);
     final file = File(path);
     if (await file.exists()) {
       await file.delete();
+    }
+
+    // Delete from Firestore
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await FirebaseFirestore.instance
+            .collection('drawings')
+            .doc(fileName)
+            .delete();
+        print('Successfully deleted drawing from Firestore');
+      }
+    } catch (e) {
+      print('Failed to delete from Firestore: $e');
+      // Continue with local deletion even if Firestore deletion fails
     }
 
     _savedDrawings.removeAt(index);
@@ -80,12 +99,13 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
     setState(() {});
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('🗑️ Drawing deleted')));
+    ).showSnackBar(const SnackBar(content: Text('Drawing removed.')));
   }
 
   Future<void> _renameDrawing(int index) async {
     final drawingData = _savedDrawings[index].split('|');
-    final currentTitle = drawingData.length > 2 ? drawingData[2] : '';
+    final currentTitle =
+        drawingData.length > 2 ? drawingData[2] : 'Drawing ${index + 1}';
 
     final controller = TextEditingController(text: currentTitle);
     final newTitle = await showDialog<String?>(
@@ -127,6 +147,62 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
     }
   }
 
+  Future<void> _loadDrawing(int index) async {
+    final drawingData = _savedDrawings[index].split('|');
+    final fileName = drawingData[0];
+    final title =
+        drawingData.length > 2 ? drawingData[2] : 'Drawing ${index + 1}';
+
+    final directory = await getApplicationDocumentsDirectory();
+    final statePath = '${directory.path}/$fileName.json';
+
+    if (await File(statePath).exists()) {
+      // If state file exists, load the complete state
+      final file = File(statePath);
+      final jsonString = await file.readAsString();
+      final json = jsonDecode(jsonString);
+      final state = await DrawingState.fromJson(json);
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder:
+              (_) => DrawingCanvasPage(
+                customTitle: title,
+                initialOffsetX:
+                    state.images.isNotEmpty ? state.images[0]['offsetX'] : 0,
+                initialOffsetY:
+                    state.images.isNotEmpty ? state.images[0]['offsetY'] : 0,
+                initialScale:
+                    state.images.isNotEmpty ? state.images[0]['scale'] : 1.0,
+                initialState: state, // Pass the complete state
+              ),
+        ),
+      );
+    } else {
+      // Fallback to basic parameters if no state file exists
+      final offsetX =
+          drawingData.length > 3 ? double.tryParse(drawingData[3]) ?? 0.0 : 0.0;
+      final offsetY =
+          drawingData.length > 4 ? double.tryParse(drawingData[4]) ?? 0.0 : 0.0;
+      final scale =
+          drawingData.length > 5 ? double.tryParse(drawingData[5]) ?? 1.0 : 1.0;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder:
+              (_) => DrawingCanvasPage(
+                customTitle: title,
+                initialOffsetX: offsetX,
+                initialOffsetY: offsetY,
+                initialScale: scale,
+              ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -164,22 +240,38 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                         itemCount: _savedDrawings.length,
                         itemBuilder: (context, index) {
                           final drawingData = _savedDrawings[index].split('|');
-                          final fileName = drawingData[0];
-                          final dateTime = DateTime.parse(drawingData[1]);
+                          // Robust parsing with defaults
+                          final fileName =
+                              drawingData.isNotEmpty ? drawingData[0] : '';
+                          final dateTime =
+                              drawingData.length > 1
+                                  ? DateTime.tryParse(drawingData[1]) ??
+                                      DateTime.now()
+                                  : DateTime.now();
                           final title =
-                              drawingData.length > 2 ? drawingData[2] : '';
+                              drawingData.length > 2
+                                  ? drawingData[2].isNotEmpty
+                                      ? drawingData[2]
+                                      : 'Drawing ${index + 1}'
+                                  : 'Drawing ${index + 1}';
                           final offsetX =
                               drawingData.length > 3
-                                  ? double.tryParse(drawingData[3]) ?? 0
-                                  : 0;
+                                  ? double.tryParse(drawingData[3]) ?? 0.0
+                                  : 0.0;
                           final offsetY =
                               drawingData.length > 4
-                                  ? double.tryParse(drawingData[4]) ?? 0
-                                  : 0;
+                                  ? double.tryParse(drawingData[4]) ?? 0.0
+                                  : 0.0;
                           final scale =
                               drawingData.length > 5
                                   ? double.tryParse(drawingData[5]) ?? 1.0
                                   : 1.0;
+
+                          // Debug print to verify parameters
+                          debugPrint(
+                            'Opening drawing: title=$title, fileName=$fileName, '
+                            'offsetX=$offsetX, offsetY=$offsetY, scale=$scale',
+                          );
 
                           return FutureBuilder<String>(
                             future: _getImagePath(fileName),
@@ -190,14 +282,13 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                               return InkWell(
                                 onTap: () {
                                   if (exists) {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder:
-                                            (_) => DrawingCanvasPage(
-                                              loadedImage: File(path),
-                                              customTitle: title,
-                                            ),
+                                    _loadDrawing(index);
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Drawing file "$title" not found.',
+                                        ),
                                       ),
                                     );
                                   }
@@ -254,6 +345,8 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                                                     fontSize: 18,
                                                     fontWeight: FontWeight.bold,
                                                   ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                 ),
                                                 const SizedBox(height: 8),
                                                 Text(
@@ -267,6 +360,8 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                                             ),
                                           ),
                                           Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
                                             children: [
                                               IconButton(
                                                 icon: const Icon(Icons.edit),

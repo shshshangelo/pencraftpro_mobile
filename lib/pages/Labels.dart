@@ -266,7 +266,7 @@ class _LabelsState extends State<Labels> {
 
         return WillPopScope(
           onWillPop: () async {
-            Navigator.pushNamed(context, '/notes');
+            // Prevent going back to /notes
             return false;
           },
           child: OrientationBuilder(

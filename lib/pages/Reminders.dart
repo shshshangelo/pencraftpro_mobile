@@ -332,28 +332,27 @@ class _RemindersState extends State<Reminders> {
 
   Widget _buildBody(List<Map<String, dynamic>> notes) {
     if (notes.isEmpty) {
-      return SizedBox(
-        height: MediaQuery.of(context).size.height * 0.6,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isSearching ? Icons.search : Icons.alarm,
-                size: 100,
-                color: Theme.of(context).colorScheme.secondary,
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isSearching ? Icons.search : Icons.alarm,
+              size: 100,
+              color: Theme.of(context).colorScheme.secondary,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isSearching ? 'No matching reminders' : 'Reminders appear here',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontSize: 15,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(height: 8),
-              Text(
-                isSearching ? 'No matching reminders' : 'Reminders appear here',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontSize: 15,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       );
     }
@@ -579,18 +578,20 @@ class _RemindersState extends State<Reminders> {
                                                   context,
                                                 ).colorScheme.onSurfaceVariant,
                                           ),
-                                      ].where((widget) => widget is Icon).fold<
-                                        List<Widget>
-                                      >([], (prev, elm) {
-                                        if (prev.isNotEmpty)
-                                          prev.add(
-                                            SizedBox(
-                                              width: isLandscape ? 2 : 4,
-                                            ),
-                                          );
-                                        prev.add(elm);
-                                        return prev;
-                                      }),
+                                      ].whereType<Icon>().fold<List<Widget>>(
+                                        [],
+                                        (prev, elm) {
+                                          if (prev.isNotEmpty) {
+                                            prev.add(
+                                              SizedBox(
+                                                width: isLandscape ? 2 : 4,
+                                              ),
+                                            );
+                                          }
+                                          prev.add(elm);
+                                          return prev;
+                                        },
+                                      ),
                                     ),
                                   ),
                                   if (actualCollaboratorsPresent)
@@ -848,8 +849,9 @@ class _RemindersState extends State<Reminders> {
                                                 final String taskText =
                                                     item['text']?.toString() ??
                                                     '';
-                                                if (taskText.isEmpty)
+                                                if (taskText.isEmpty) {
                                                   return const SizedBox.shrink();
+                                                }
                                                 return Padding(
                                                   padding:
                                                       const EdgeInsets.symmetric(

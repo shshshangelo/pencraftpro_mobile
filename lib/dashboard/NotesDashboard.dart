@@ -1090,9 +1090,11 @@ class _NotesDashboardState extends State<NotesDashboard> {
                 child:
                     filteredNotes.isEmpty
                         ? SizedBox(
-                          height: MediaQuery.of(context).size.height * 0.6,
+                          height: MediaQuery.of(context).size.height * 0.8,
                           child: Center(
                             child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
@@ -1229,12 +1231,14 @@ class _NotesDashboardState extends State<NotesDashboard> {
                             if (actualTitlePresent) landscapeContentScore++;
                             if (actualTextContent) landscapeContentScore++;
                             if (actualChecklistPresent) landscapeContentScore++;
-                            if (actualLabelsPresent)
+                            if (actualLabelsPresent) {
                               landscapeContentScore++; // Labels are small but add to visual density
+                            }
                             if (actualReminderPresent) landscapeContentScore++;
                             if (actualVoiceNotePresent) landscapeContentScore++;
-                            if (actualCollaboratorsPresent)
+                            if (actualCollaboratorsPresent) {
                               landscapeContentScore++;
+                            }
 
                             bool showImagesInCard = true; // Default to true
                             if (isLandscape && landscapeContentScore > 3) {
@@ -1354,10 +1358,10 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                                 .colorScheme
                                                                 .onSurfaceVariant,
                                                       ),
-                                                  ].where((widget) => widget is Icon).fold<
+                                                  ].whereType<Icon>().fold<
                                                     List<Widget>
                                                   >([], (prev, elm) {
-                                                    if (prev.isNotEmpty)
+                                                    if (prev.isNotEmpty) {
                                                       prev.add(
                                                         SizedBox(
                                                           width:
@@ -1366,6 +1370,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                                   : 4,
                                                         ),
                                                       );
+                                                    }
                                                     prev.add(elm);
                                                     return prev;
                                                   }),
@@ -1537,8 +1542,9 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                             note['reminder']
                                                                 .toString(),
                                                           );
-                                                      if (reminder == null)
+                                                      if (reminder == null) {
                                                         return const SizedBox.shrink();
+                                                      }
                                                       final now =
                                                           DateTime.now();
                                                       final isExpired = reminder
@@ -1736,8 +1742,9 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                                     ?.toString() ??
                                                                 '';
                                                             if (taskText
-                                                                .isEmpty)
+                                                                .isEmpty) {
                                                               return const SizedBox.shrink();
+                                                            }
                                                             return Padding(
                                                               padding:
                                                                   const EdgeInsets.symmetric(

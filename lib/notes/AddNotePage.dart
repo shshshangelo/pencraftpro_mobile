@@ -1,4 +1,4 @@
-// ignore_for_file: unused_import
+// ignore_for_file: unused_import, unused_element
 import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -606,7 +606,7 @@ class _AddNotePageState extends State<AddNotePage> {
     await _saveNoteToFirestore();
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Moved note to folder: ${matchedFolder.name}')),
+      SnackBar(content: Text('Note moved to folder: ${matchedFolder.name}.')),
     );
   }
 
@@ -684,7 +684,7 @@ class _AddNotePageState extends State<AddNotePage> {
       if (!notificationPermission.isGranted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Notification permission denied'),
+            content: const Text('Notification permission denied.'),
             backgroundColor: Colors.red,
             action:
                 notificationPermission.isPermanentlyDenied
@@ -732,7 +732,7 @@ class _AddNotePageState extends State<AddNotePage> {
       if (scheduledDate.isBefore(now)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Cannot schedule notification for past time'),
+            content: Text('Cannot schedule notification for past time.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -855,7 +855,7 @@ class _AddNotePageState extends State<AddNotePage> {
     if (!permissionStatus.isGranted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Camera permission denied'),
+          content: Text('Camera permission denied.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -941,7 +941,7 @@ class _AddNotePageState extends State<AddNotePage> {
     if (!permissionStatus.isGranted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Microphone permission denied'),
+          content: const Text('Microphone permission denied.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -1062,7 +1062,7 @@ class _AddNotePageState extends State<AddNotePage> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Voice note recorded'),
+            content: Text('Voice note recorded.'),
             backgroundColor: Colors.green,
           ),
         );
@@ -1302,7 +1302,7 @@ class _AddNotePageState extends State<AddNotePage> {
                           });
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Label "$labelName" created'),
+                              content: Text('Label "$labelName" created.'),
                             ),
                           );
                         }
@@ -1331,7 +1331,7 @@ class _AddNotePageState extends State<AddNotePage> {
                               Navigator.pop(context);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('Label "${label.name}" added'),
+                                  content: Text('Label "${label.name}" added.'),
                                 ),
                               );
                             },
@@ -1356,7 +1356,7 @@ class _AddNotePageState extends State<AddNotePage> {
     _saveNote();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Note moved to archive'),
+        content: Text('Note moved to archive.'),
         backgroundColor: Colors.green,
       ),
     );
@@ -1398,7 +1398,7 @@ class _AddNotePageState extends State<AddNotePage> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Note copied'),
+        content: Text('Note copied.'),
         backgroundColor: Colors.green,
       ),
     );
@@ -1497,9 +1497,9 @@ class _AddNotePageState extends State<AddNotePage> {
               .get();
 
       if (userQuery.docs.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Collaborator not found')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Collaborator not found.')),
+        );
         return;
       }
 
@@ -1907,17 +1907,21 @@ class _AddNotePageState extends State<AddNotePage> {
 
       await file.writeAsBytes(await pdf.save());
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Note exported as PDF: $fileName.pdf'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      await Printing.layoutPdf(
+      // Await the PDF layout before showing the SnackBar
+      final bool exportSuccessful = await Printing.layoutPdf(
         onLayout: (PdfPageFormat format) async => pdf.save(),
         name: fileName,
       );
+
+      // Show SnackBar only if export was successful (user didn't cancel)
+      if (exportSuccessful) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Note exported as PDF: $fileName.pdf'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2124,7 +2128,7 @@ class _AddNotePageState extends State<AddNotePage> {
                                           ).showSnackBar(
                                             SnackBar(
                                               content: Text(
-                                                'Folder "$folderName" created',
+                                                'Folder "$folderName" created.',
                                               ),
                                             ),
                                           );
@@ -2356,7 +2360,7 @@ class _AddNotePageState extends State<AddNotePage> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          _isPinned ? 'Note pinned' : 'Note unpinned',
+                          _isPinned ? 'Note pinned.' : 'Note unpinned.',
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.onPrimary,
                             fontSize: 16,
@@ -3010,7 +3014,7 @@ class _AddNotePageState extends State<AddNotePage> {
                                 });
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Checklist item deleted'),
+                                    content: Text('Checklist item deleted.'),
                                     backgroundColor: Colors.black,
                                   ),
                                 );

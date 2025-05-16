@@ -196,10 +196,7 @@ class SyncService {
       final firestoreNotes =
           [...ownerNotesSnapshot.docs, ...collaboratorNotesSnapshot.docs]
               .fold<Map<String, Map<String, dynamic>>>({}, (map, doc) {
-                map[doc.id] = {
-                  ...doc.data(),
-                  'id': doc.id,
-                };
+                map[doc.id] = {...doc.data(), 'id': doc.id};
                 return map;
               })
               .values
@@ -505,7 +502,7 @@ class __AnimatedSyncTextState extends State<_AnimatedSyncText>
     return FadeTransition(
       opacity: _fadeAnimation,
       child: const Text(
-        'Syncing notes...\nPlease wait.',
+        'Sync Notes...',
         textAlign: TextAlign.center,
         style: TextStyle(
           color: Colors.black87,
