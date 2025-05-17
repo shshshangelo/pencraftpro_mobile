@@ -361,11 +361,45 @@ class _AddNotePageState extends State<AddNotePage> {
         throw Exception('No authenticated user found.');
       }
 
+      // Check if user has permission to edit
+      if (widget.noteId != null) {
+        final noteRef = FirebaseFirestore.instance
+            .collection('notes')
+            .doc(widget.noteId);
+        final noteDoc = await noteRef.get();
+        if (noteDoc.exists) {
+          final noteData = noteDoc.data();
+          final owner = noteData?['owner'] as String?;
+          final collaborators = List<String>.from(
+            noteData?['collaborators'] ?? [],
+          );
+
+          if (owner != currentUser.uid &&
+              !collaborators.contains(currentUser.uid)) {
+            throw Exception('You do not have permission to edit this note.');
+          }
+        }
+      }
+
       // Save to local storage first
       final prefs = await SharedPreferences.getInstance();
       final String? notesString = prefs.getString('notes');
       final List<dynamic> notes =
           notesString != null ? jsonDecode(notesString) : [];
+
+      // Get existing note data if it exists
+      final existingNote = notes.firstWhere(
+        (note) => note['id'] == noteId,
+        orElse: () => null,
+      );
+
+      // Preserve existing collaborators if this is an update
+      List<String> existingCollaborators = [];
+      if (existingNote != null) {
+        existingCollaborators = List<String>.from(
+          existingNote['collaborators'] ?? [],
+        );
+      }
 
       final noteData = {
         'id': noteId,
@@ -395,11 +429,16 @@ class _AddNotePageState extends State<AddNotePage> {
             _selectedFolderId != null
                 ? _folderColorMap[_selectedFolderId]?.value
                 : null,
-        'owner': currentUser.uid,
+        'owner':
+            widget.noteId == null
+                ? currentUser.uid
+                : existingNote?['owner'] ?? currentUser.uid,
         'ownerEmail': currentUser.email ?? 'no-email',
-        'collaborators': [currentUser.uid],
+        'collaborators':
+            existingNote == null ? [currentUser.uid] : existingCollaborators,
         'collaboratorEmails': _collaboratorEmails,
-        'createdAt': DateTime.now().toIso8601String(),
+        'createdAt':
+            existingNote?['createdAt'] ?? DateTime.now().toIso8601String(),
         'updatedAt': DateTime.now().toIso8601String(),
       };
 
@@ -439,7 +478,12 @@ class _AddNotePageState extends State<AddNotePage> {
       );
     } catch (e) {
       debugPrint('⚠️ Note saved locally but Firestore sync pending: $e');
-      // Don't show error to user since we saved locally
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -1448,15 +1492,37 @@ class _AddNotePageState extends State<AddNotePage> {
 
       final collaboratorUid = userQuery.docs.first.id;
 
-      // Update the note in Firestore
+      // Get the current note data first
       final noteRef = FirebaseFirestore.instance
           .collection('notes')
           .doc(widget.noteId);
-      await noteRef.set({
-        'collaborators': FieldValue.arrayUnion([collaboratorUid]),
-        'collaboratorEmails': FieldValue.arrayUnion([normalizedEmail]),
-        'updatedAt': Timestamp.now(),
-      }, SetOptions(merge: true));
+      final noteDoc = await noteRef.get();
+
+      if (!noteDoc.exists) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Note not found.')));
+        return;
+      }
+
+      final noteData = noteDoc.data()!;
+      final currentCollaborators = List<String>.from(
+        noteData['collaborators'] ?? [],
+      );
+      final currentCollaboratorEmails = List<String>.from(
+        noteData['collaboratorEmails'] ?? [],
+      );
+
+      // Add the new collaborator
+      currentCollaborators.add(collaboratorUid);
+      currentCollaboratorEmails.add(normalizedEmail);
+
+      // Update the note with the new collaborators
+      await noteRef.update({
+        'collaborators': currentCollaborators,
+        'collaboratorEmails': currentCollaboratorEmails,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
       // Update local state
       setState(() {

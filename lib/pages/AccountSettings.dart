@@ -286,29 +286,6 @@ class _AccountSettingsState extends State<AccountSettings> {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    final lastChange = prefs.getInt('lastProfileChangeTimestamp');
-    final now = DateTime.now().millisecondsSinceEpoch;
-    const limit = 7 * 24 * 60 * 60 * 1000;
-
-    // Uncomment the 7-day limit check to re-enable the restriction
-    if (lastChange != null && now - lastChange < limit) {
-      debugPrint('Profile photo change limit reached');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'You can only change your profile photo once every 7 days.',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          backgroundColor:
-              Theme.of(context).colorScheme.surfaceContainerHighest,
-        ),
-      );
-      return;
-    }
-
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     debugPrint('Picked image path: ${pickedFile?.path}');
@@ -320,7 +297,6 @@ class _AccountSettingsState extends State<AccountSettings> {
           _customProfileImage = file;
         });
         await prefs.setString('customProfileImagePath', pickedFile.path);
-        await prefs.setInt('lastProfileChangeTimestamp', now);
         await _uploadProfileImage(file);
         await _savePreferences();
         if (!mounted) return;
@@ -358,28 +334,6 @@ class _AccountSettingsState extends State<AccountSettings> {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    final lastChange = prefs.getInt('lastProfileChangeTimestamp');
-    final now = DateTime.now().millisecondsSinceEpoch;
-    const limit = 7 * 24 * 60 * 60 * 1000;
-
-    // Uncomment the 7-day limit check to re-enable the restriction
-    if (lastChange != null && now - lastChange < limit) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'You can only change your profile photo once every 7 days.',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          backgroundColor:
-              Theme.of(context).colorScheme.surfaceContainerHighest,
-        ),
-      );
-      return;
-    }
-
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.camera);
 
@@ -390,7 +344,6 @@ class _AccountSettingsState extends State<AccountSettings> {
           _customProfileImage = file;
         });
         await prefs.setString('customProfileImagePath', pickedFile.path);
-        await prefs.setInt('lastProfileChangeTimestamp', now);
         await _uploadProfileImage(file);
         await _savePreferences();
         if (!mounted) return;
@@ -534,9 +487,9 @@ class _AccountSettingsState extends State<AccountSettings> {
   void _checkNameEditability() {
     if (_lastNameChangeTimestamp != null) {
       final currentTime = DateTime.now().millisecondsSinceEpoch;
-      const threeDaysInMillis = 3 * 24 * 60 * 60 * 1000;
+      const sevenDaysInMillis = 7 * 24 * 60 * 60 * 1000;
       _isNameEditable =
-          currentTime - _lastNameChangeTimestamp! > threeDaysInMillis;
+          currentTime - _lastNameChangeTimestamp! > sevenDaysInMillis;
     } else {
       _isNameEditable = true;
     }

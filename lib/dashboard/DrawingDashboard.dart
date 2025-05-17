@@ -80,12 +80,6 @@ class _DrawingDashboardState extends State<DrawingDashboard> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Image.asset(
-              'assets/aclc.png',
-              width: 250,
-              height: 200,
-              fit: BoxFit.contain,
-            ),
             const SizedBox(height: 20),
             Text(
               'Welcome to your Drawing Dashboard',

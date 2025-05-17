@@ -7,7 +7,7 @@ class LoadingOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.black.withOpacity(0.5),
+      color: Colors.black.withOpacity(0.7),
       child: Center(
         child: Container(
           width: 200,
@@ -17,9 +17,9 @@ class LoadingOverlay extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Theme.of(context).colorScheme.shadow.withOpacity(0.2),
-                blurRadius: 10,
-                spreadRadius: 2,
+                color: Theme.of(context).colorScheme.shadow.withOpacity(0.3),
+                blurRadius: 15,
+                spreadRadius: 3,
               ),
             ],
           ),
@@ -58,13 +58,14 @@ class __AnimatedSpinnerState extends State<_AnimatedSpinner>
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _rotateAnimation;
+  late Animation<double> _opacityAnimation;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(milliseconds: 1500),
     )..repeat();
 
     _scaleAnimation = Tween<double>(
@@ -75,7 +76,12 @@ class __AnimatedSpinnerState extends State<_AnimatedSpinner>
     _rotateAnimation = Tween<double>(
       begin: 0,
       end: 360,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.linear));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
+    _opacityAnimation = Tween<double>(
+      begin: 0.7,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -86,6 +92,7 @@ class __AnimatedSpinnerState extends State<_AnimatedSpinner>
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
@@ -93,31 +100,30 @@ class __AnimatedSpinnerState extends State<_AnimatedSpinner>
           angle: _rotateAnimation.value * (3.14159 / 180),
           child: Transform.scale(
             scale: _scaleAnimation.value,
-            child: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    Theme.of(context).colorScheme.primary,
-                    Theme.of(context).colorScheme.primaryContainer,
+            child: Opacity(
+              opacity: _opacityAnimation.value,
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [colorScheme.primary, colorScheme.primaryContainer],
+                    stops: const [0.3, 1.0],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.primary.withOpacity(0.5),
+                      blurRadius: 15,
+                      spreadRadius: 3,
+                    ),
                   ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withOpacity(0.4),
-                    blurRadius: 10,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: Icon(
-                Icons.logout,
-                color: Theme.of(context).colorScheme.onPrimary,
-                size: 30,
+                child: Icon(
+                  Icons.logout,
+                  color: colorScheme.onPrimary,
+                  size: 30,
+                ),
               ),
             ),
           ),

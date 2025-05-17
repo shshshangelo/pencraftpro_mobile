@@ -1380,10 +1380,27 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                 Padding(
                                                   padding:
                                                       const EdgeInsets.only(
-                                                        top: 2,
+                                                        bottom: 4.0,
                                                       ),
-                                                  child: ClipRect(
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 4,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color:
+                                                          Colors
+                                                              .purple
+                                                              .shade100,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            12,
+                                                          ),
+                                                    ),
                                                     child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
                                                       children: [
                                                         Icon(
                                                           Icons.people,

@@ -14,6 +14,7 @@ import 'package:pencraftpro/drawing/SavedDrawingPage.dart';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 
 // Add these enums and classes
 enum ShapeType { none, rectangle, circle, line }
@@ -691,78 +692,110 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
     return false;
   }
 
+  Future<ui.Image> _addWatermark(ui.Image image) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // Draw the original image
+    canvas.drawImage(image, Offset.zero, Paint());
+
+    // Load the app icon
+    final ByteData iconData = await rootBundle.load('assets/icon.png');
+    final Uint8List iconBytes = iconData.buffer.asUint8List();
+    final ui.Codec iconCodec = await ui.instantiateImageCodec(iconBytes);
+    final ui.FrameInfo iconFrame = await iconCodec.getNextFrame();
+    final ui.Image iconImage = iconFrame.image;
+
+    // Sample background color at watermark position
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (byteData == null) return image;
+
+    // Sample color from bottom right corner
+    final int x = (image.width - 50).clamp(0, image.width - 1).toInt();
+    final int y = (image.height - 50).clamp(0, image.height - 1).toInt();
+    final int offset = (y * image.width + x) * 4;
+    final int r = byteData.getUint8(offset);
+    final int g = byteData.getUint8(offset + 1);
+    final int b = byteData.getUint8(offset + 2);
+
+    // Calculate background brightness
+    final double brightness = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+
+    // Determine watermark colors based on background brightness
+    final Color textColor = brightness > 0.5 ? Colors.black : Colors.white;
+
+    // Add watermark text
+    final textSpan = TextSpan(
+      text: 'Made with PenCraft Pro',
+      style: TextStyle(
+        color: textColor.withOpacity(
+          0.85,
+        ), // Increased opacity for better visibility
+        fontSize: 16,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+    );
+
+    textPainter.layout();
+
+    // Calculate icon size
+    final double iconSize = textPainter.height * 2.5;
+
+    // Position watermark in bottom right corner with padding
+    final textPosition = Offset(
+      image.width - textPainter.width - 20,
+      image.height - textPainter.height - 20,
+    );
+
+    // Position icon above text
+    final iconPosition = Offset(
+      textPosition.dx + (textPainter.width - iconSize) / 2,
+      textPosition.dy - iconSize - 15,
+    );
+
+    // Draw icon with adjusted color
+    canvas.drawImageRect(
+      iconImage,
+      Rect.fromLTWH(
+        0,
+        0,
+        iconImage.width.toDouble(),
+        iconImage.height.toDouble(),
+      ),
+      Rect.fromLTWH(iconPosition.dx, iconPosition.dy, iconSize, iconSize),
+      Paint()
+        ..color = textColor.withOpacity(
+          0.85,
+        ), // Increased opacity for better visibility
+    );
+
+    // Draw text
+    textPainter.paint(canvas, textPosition);
+
+    return await recorder.endRecording().toImage(image.width, image.height);
+  }
+
   Future<void> _saveAsImage() async {
-    PermissionStatus status;
-    if (Platform.isAndroid && await _isAndroid13OrAbove()) {
-      status = await Permission.photos.request();
-    } else {
-      status = await Permission.storage.request();
-    }
-
-    if (!status.isGranted) {
-      if (status.isPermanentlyDenied) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Storage or Photos permission permanently denied. Please enable in settings.',
-            ),
-            action: SnackBarAction(
-              label: 'Settings',
-              onPressed: () => openAppSettings(),
-            ),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Storage or Photos permission denied.')),
-        );
-      }
-      return;
-    }
-
     try {
       RenderRepaintBoundary boundary =
           _globalKey.currentContext!.findRenderObject()
               as RenderRepaintBoundary;
       final image = await boundary.toImage(pixelRatio: 3.0);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      final pngBytes = byteData!.buffer.asUint8List();
-      print('PNG bytes length: ${pngBytes.length}');
 
-      final cleanTitle = (widget.customTitle ?? 'drawing').trim().replaceAll(
-        RegExp(r'\\s+'),
-        '',
+      // Add watermark to the image
+      final watermarkedImage = await _addWatermark(image);
+
+      final byteData = await watermarkedImage.toByteData(
+        format: ui.ImageByteFormat.png,
       );
-      final fileName = '${cleanTitle}_${DateTime.now().millisecondsSinceEpoch}';
+      final pngBytes = byteData!.buffer.asUint8List();
 
       await FlutterImageGallerySaver.saveImage(pngBytes);
-
-      // Save to SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final savedDrawings = prefs.getStringList('saved_drawings') ?? [];
-      print('Before saving to SharedPreferences: $savedDrawings');
-      if (savedDrawings.length >= 100) {
-        savedDrawings.removeAt(savedDrawings.length - 1);
-      }
-      // Get current image offset and scale
-      final img = _images.isNotEmpty ? _images[0] : null;
-      final offsetX = img?.offset.dx ?? 0;
-      final offsetY = img?.offset.dy ?? 0;
-      final scale = img?.scale ?? 1.0;
-      // Generate automatic name if customTitle is null or empty
-      String drawingTitle =
-          (widget.customTitle != null && widget.customTitle!.trim().isNotEmpty)
-              ? widget.customTitle!
-              : 'Drawing ${savedDrawings.length + 1}';
-      savedDrawings.insert(
-        0,
-        '$fileName|${DateTime.now().toIso8601String()}|$drawingTitle|$offsetX|$offsetY|$scale',
-      );
-      bool success = await prefs.setStringList('saved_drawings', savedDrawings);
-      print('SharedPreferences save success: $success');
-      print(
-        'After saving to SharedPreferences: ${prefs.getStringList('saved_drawings')}',
-      );
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Drawing saved to gallery.')),
@@ -1064,7 +1097,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                 TextButton(
                   onPressed: () => Navigator.pop(context, true),
                   style: TextButton.styleFrom(
-                    backgroundColor: Colors.green,
+                    backgroundColor: Colors.red,
                     foregroundColor: Colors.white,
                   ),
                   child: const Text('Save'),
@@ -1139,7 +1172,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
       String drawingTitle =
           (widget.customTitle != null && widget.customTitle!.trim().isNotEmpty)
               ? widget.customTitle!
-              : 'Drawing ${savedDrawings.length + 1}';
+              : 'Edit Title Name';
 
       savedDrawings.insert(
         0,
@@ -1466,7 +1499,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                               TextButton(
                                 onPressed: () => Navigator.pop(context, true),
                                 style: TextButton.styleFrom(
-                                  backgroundColor: Colors.green,
+                                  backgroundColor: Colors.red,
                                   foregroundColor: Colors.white,
                                 ),
                                 child: const Text('Save'),
@@ -1743,6 +1776,18 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                         ),
                       ),
                       Tooltip(
+                        message: 'Pick Color',
+                        child: IconButton(
+                          icon: Icon(Icons.color_lens, color: _iconColor),
+                          onPressed: () {
+                            setState(() {
+                              _isEyedropperActive = false;
+                            });
+                            _showColorPicker();
+                          },
+                        ),
+                      ),
+                      Tooltip(
                         message: 'Eraser',
                         child: IconButton(
                           icon: Icon(
@@ -1783,18 +1828,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                           },
                         ),
                       ),
-                      Tooltip(
-                        message: 'Color',
-                        child: IconButton(
-                          icon: Icon(Icons.color_lens, color: _iconColor),
-                          onPressed: () {
-                            setState(() {
-                              _isEyedropperActive = false;
-                            });
-                            _showColorPicker();
-                          },
-                        ),
-                      ),
+
                       Tooltip(
                         message: 'Background',
                         child: IconButton(

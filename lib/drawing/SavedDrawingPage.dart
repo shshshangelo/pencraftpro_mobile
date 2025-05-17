@@ -112,10 +112,11 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Rename Drawing', style: TextStyle(fontSize: 16)),
+            title: const Text('Rename Drawing', style: TextStyle(fontSize: 14)),
             content: TextField(
               controller: controller,
               autofocus: true,
+              style: const TextStyle(fontSize: 14),
               decoration: const InputDecoration(
                 hintText: 'Enter new title',
                 hintStyle: TextStyle(fontSize: 14),
@@ -124,11 +125,11 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                child: const Text('Cancel', style: TextStyle(fontSize: 14)),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(context, controller.text.trim()),
-                child: const Text('Save'),
+                child: const Text('Save', style: TextStyle(fontSize: 14)),
               ),
             ],
           ),
@@ -144,6 +145,13 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('saved_drawings', _savedDrawings);
       setState(() {});
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Title updated.')));
+      }
     }
   }
 
@@ -229,9 +237,9 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                       child: Text(
                         'Recent Drawings',
                         style: TextStyle(
-                          fontSize: 24,
+                          fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          color: null,
                         ),
                       ),
                     ),
@@ -341,8 +349,12 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                                               children: [
                                                 Text(
                                                   title,
-                                                  style: const TextStyle(
-                                                    fontSize: 18,
+                                                  style: TextStyle(
+                                                    fontSize:
+                                                        title ==
+                                                                'Edit Title Name'
+                                                            ? 14
+                                                            : 14,
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                   overflow:
