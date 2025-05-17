@@ -456,213 +456,215 @@ class _ArchiveState extends State<Archive> {
                     children: [
                       Padding(
                         padding: EdgeInsets.all(padding),
-                        child: SingleChildScrollView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxHeight: isLandscape ? 200 : 300,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                ClipRect(
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (hasImages)
-                                        Icon(
-                                          Icons.image,
-                                          size: isLandscape ? 12 : 14,
-                                          color:
-                                              Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                        ),
-                                      if (actualVoiceNotePresent)
-                                        Icon(
-                                          Icons.mic,
-                                          size: isLandscape ? 12 : 14,
-                                          color:
-                                              Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                        ),
-                                      if (actualChecklistPresent)
-                                        Icon(
-                                          Icons.checklist,
-                                          size: isLandscape ? 12 : 14,
-                                          color:
-                                              Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                        ),
-                                      if (note['folderId'] != null)
-                                        Icon(
-                                          Icons.bookmark,
-                                          size: isLandscape ? 12 : 14,
-                                          color:
-                                              note['folderColor'] != null
-                                                  ? Color(note['folderColor'])
-                                                  : Theme.of(
-                                                    context,
-                                                  ).colorScheme.primary,
-                                        ),
-                                      if (isPinned)
-                                        Icon(
-                                          Icons.push_pin,
-                                          size: isLandscape ? 12 : 14,
-                                          color:
-                                              Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                        ),
-                                    ].whereType<Icon>().fold<List<Widget>>([], (
-                                      prev,
-                                      elm,
-                                    ) {
-                                      if (prev.isNotEmpty) {
-                                        prev.add(
-                                          SizedBox(width: isLandscape ? 2 : 4),
-                                        );
-                                      }
-                                      prev.add(elm);
-                                      return prev;
-                                    }),
-                                  ),
-                                ),
-                                if (actualCollaboratorsPresent)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 2),
-                                    child: ClipRect(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            return Container(
+                              height: isLandscape ? 200 : 300,
+                              child: SingleChildScrollView(
+                                physics: const NeverScrollableScrollPhysics(),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ClipRect(
                                       child: Row(
+                                        mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(
-                                            Icons.people,
-                                            size: isLandscape ? 12 : 14,
-                                            color:
-                                                Theme.of(
-                                                  context,
-                                                ).colorScheme.onSurfaceVariant,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Flexible(
-                                            child: Text(
-                                              'Shared Notes',
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall?.copyWith(
-                                                fontSize: isLandscape ? 8 : 10,
+                                          if (hasImages)
+                                            Icon(
+                                              Icons.image,
+                                              size: isLandscape ? 12 : 14,
+                                              color:
+                                                  Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                            ),
+                                          if (actualVoiceNotePresent)
+                                            Icon(
+                                              Icons.mic,
+                                              size: isLandscape ? 12 : 14,
+                                              color:
+                                                  Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                            ),
+                                          if (actualChecklistPresent)
+                                            Icon(
+                                              Icons.checklist,
+                                              size: isLandscape ? 12 : 14,
+                                              color:
+                                                  Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                            ),
+                                          if (note['folderId'] != null)
+                                            Icon(
+                                              Icons.bookmark,
+                                              size: isLandscape ? 12 : 14,
+                                              color:
+                                                  note['folderColor'] != null
+                                                      ? Color(
+                                                        note['folderColor'],
+                                                      )
+                                                      : Theme.of(
+                                                        context,
+                                                      ).colorScheme.primary,
+                                            ),
+                                          if (isPinned)
+                                            Icon(
+                                              Icons.push_pin,
+                                              size: isLandscape ? 12 : 14,
+                                              color:
+                                                  Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                            ),
+                                        ].whereType<Icon>().fold<List<Widget>>(
+                                          [],
+                                          (prev, elm) {
+                                            if (prev.isNotEmpty) {
+                                              prev.add(
+                                                SizedBox(
+                                                  width: isLandscape ? 2 : 4,
+                                                ),
+                                              );
+                                            }
+                                            prev.add(elm);
+                                            return prev;
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                    if (actualCollaboratorsPresent)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: ClipRect(
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.people,
+                                                size: isLandscape ? 12 : 14,
                                                 color:
                                                     Theme.of(context)
                                                         .colorScheme
                                                         .onSurfaceVariant,
                                               ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                if (actualLabelsPresent)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 2),
-                                    child: Wrap(
-                                      spacing: 2,
-                                      runSpacing: 2,
-                                      children:
-                                          labels.take(2).map<Widget>((label) {
-                                            return Chip(
-                                              padding: EdgeInsets.zero,
-                                              labelPadding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 4,
-                                                  ),
-                                              materialTapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                              label: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                    Icons.label_important,
-                                                    size: isLandscape ? 8 : 10,
+                                              const SizedBox(width: 4),
+                                              Flexible(
+                                                child: Text(
+                                                  'Shared Notes',
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.bodySmall?.copyWith(
+                                                    fontSize:
+                                                        isLandscape ? 8 : 10,
                                                     color:
                                                         Theme.of(context)
                                                             .colorScheme
                                                             .onSurfaceVariant,
                                                   ),
-                                                  const SizedBox(width: 2),
-                                                  Text(
-                                                    label,
-                                                    style: Theme.of(
-                                                      context,
-                                                    ).textTheme.bodySmall?.copyWith(
-                                                      fontSize:
-                                                          isLandscape ? 8 : 10,
-                                                      color:
-                                                          Theme.of(context)
-                                                              .colorScheme
-                                                              .onPrimaryContainer,
-                                                    ),
-                                                  ),
-                                                ],
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
                                               ),
-                                              backgroundColor:
-                                                  Theme.of(context)
-                                                      .colorScheme
-                                                      .primaryContainer,
-                                            );
-                                          }).toList(),
-                                    ),
-                                  ),
-                                if (actualTitlePresent)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 2.0),
-                                    child: Text(
-                                      note['title'] ?? 'Untitled',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: isLandscape ? 14 : 16,
-                                        fontFamily:
-                                            note['fontFamily'] ?? 'Roboto',
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                if (actualReminderPresent)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 2.0),
-                                    child: ClipRect(
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.alarm,
-                                            size: isLandscape ? 10 : 12,
-                                            color:
-                                                reminder.isBefore(now)
-                                                    ? Theme.of(
-                                                      context,
-                                                    ).colorScheme.error
-                                                    : Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurfaceVariant,
+                                            ],
                                           ),
-                                          const SizedBox(width: 2),
-                                          Expanded(
-                                            child: Text(
-                                              DateFormat(
-                                                'MMM dd, hh:mm a',
-                                              ).format(reminder),
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall?.copyWith(
-                                                fontSize: isLandscape ? 8 : 10,
+                                        ),
+                                      ),
+                                    if (actualLabelsPresent)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Wrap(
+                                          spacing: 2,
+                                          runSpacing: 2,
+                                          children:
+                                              labels.take(2).map<Widget>((
+                                                label,
+                                              ) {
+                                                return Chip(
+                                                  padding: EdgeInsets.zero,
+                                                  labelPadding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 4,
+                                                      ),
+                                                  materialTapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                  label: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.label_important,
+                                                        size:
+                                                            isLandscape
+                                                                ? 8
+                                                                : 10,
+                                                        color:
+                                                            Theme.of(context)
+                                                                .colorScheme
+                                                                .onSurfaceVariant,
+                                                      ),
+                                                      const SizedBox(width: 2),
+                                                      Text(
+                                                        label,
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .bodySmall
+                                                            ?.copyWith(
+                                                              fontSize:
+                                                                  isLandscape
+                                                                      ? 8
+                                                                      : 10,
+                                                              color:
+                                                                  Theme.of(
+                                                                        context,
+                                                                      )
+                                                                      .colorScheme
+                                                                      .onPrimaryContainer,
+                                                            ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  backgroundColor:
+                                                      Theme.of(context)
+                                                          .colorScheme
+                                                          .primaryContainer,
+                                                );
+                                              }).toList(),
+                                        ),
+                                      ),
+                                    if (actualTitlePresent)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 2.0,
+                                        ),
+                                        child: Text(
+                                          note['title'] ?? 'Untitled',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: isLandscape ? 14 : 16,
+                                            fontFamily:
+                                                note['fontFamily'] ?? 'Roboto',
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    if (actualReminderPresent)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 2.0,
+                                        ),
+                                        child: ClipRect(
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.alarm,
+                                                size: isLandscape ? 10 : 12,
                                                 color:
                                                     reminder.isBefore(now)
                                                         ? Theme.of(
@@ -672,142 +674,158 @@ class _ArchiveState extends State<Archive> {
                                                             .colorScheme
                                                             .onSurfaceVariant,
                                               ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
+                                              const SizedBox(width: 2),
+                                              Expanded(
+                                                child: Text(
+                                                  DateFormat(
+                                                    'MMM dd, hh:mm a',
+                                                  ).format(reminder),
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.bodySmall?.copyWith(
+                                                    fontSize:
+                                                        isLandscape ? 8 : 10,
+                                                    color:
+                                                        reminder.isBefore(now)
+                                                            ? Theme.of(
+                                                              context,
+                                                            ).colorScheme.error
+                                                            : Theme.of(context)
+                                                                .colorScheme
+                                                                .onSurfaceVariant,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                if (actualVoiceNotePresent)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4.0),
-                                    child: ClipRect(
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.mic,
-                                            size: isLandscape ? 12 : 14,
+                                    if (actualVoiceNotePresent)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 4.0,
+                                        ),
+                                        child: ClipRect(
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.mic,
+                                                size: isLandscape ? 12 : 14,
+                                                color:
+                                                    Theme.of(
+                                                      context,
+                                                    ).colorScheme.primary,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Flexible(
+                                                child: Text(
+                                                  'Voice note attached',
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.bodySmall?.copyWith(
+                                                    fontSize:
+                                                        isLandscape ? 10 : 12,
+                                                    color:
+                                                        Theme.of(context)
+                                                            .colorScheme
+                                                            .onSurfaceVariant,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    if (actualTextContent)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 4.0,
+                                        ),
+                                        child: Text(
+                                          firstTextItem,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium?.copyWith(
+                                            fontSize: textFontSize,
+                                            fontFamily: textFontFamily,
+                                            fontWeight:
+                                                textIsBold
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                            fontStyle:
+                                                textIsItalic
+                                                    ? FontStyle.italic
+                                                    : FontStyle.normal,
+                                            decoration: TextDecoration.combine([
+                                              if (textIsUnderline)
+                                                TextDecoration.underline,
+                                              if (textIsStrikethrough)
+                                                TextDecoration.lineThrough,
+                                            ]),
                                             color:
                                                 Theme.of(
                                                   context,
-                                                ).colorScheme.primary,
+                                                ).textTheme.bodyMedium?.color,
                                           ),
-                                          const SizedBox(width: 4),
-                                          Flexible(
-                                            child: Text(
-                                              'Voice note attached',
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall?.copyWith(
-                                                fontSize: isLandscape ? 10 : 12,
-                                                color:
-                                                    Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurfaceVariant,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
+                                          maxLines: isLandscape ? 1 : 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                if (actualTextContent)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4.0),
-                                    child: Text(
-                                      firstTextItem,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium?.copyWith(
-                                        fontSize: textFontSize,
-                                        fontFamily: textFontFamily,
-                                        fontWeight:
-                                            textIsBold
-                                                ? FontWeight.bold
-                                                : FontWeight.normal,
-                                        fontStyle:
-                                            textIsItalic
-                                                ? FontStyle.italic
-                                                : FontStyle.normal,
-                                        decoration: TextDecoration.combine([
-                                          if (textIsUnderline)
-                                            TextDecoration.underline,
-                                          if (textIsStrikethrough)
-                                            TextDecoration.lineThrough,
-                                        ]),
-                                        color:
-                                            Theme.of(
-                                              context,
-                                            ).textTheme.bodyMedium?.color,
-                                      ),
-                                      maxLines: isLandscape ? 1 : 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                if (actualChecklistPresent)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4.0),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children:
-                                          checklists.expand<Widget>((
-                                            checklistData,
-                                          ) {
-                                            final items =
-                                                (checklistData['checklistItems']
-                                                        as List<dynamic>?)
-                                                    ?.map(
-                                                      (e) => Map<
-                                                        String,
-                                                        dynamic
-                                                      >.from(e),
-                                                    )
-                                                    .toList() ??
-                                                [];
-                                            return items.take(isLandscape ? 1 : 3).map<
-                                              Widget
-                                            >((item) {
-                                              final bool isChecked =
-                                                  item['checked'] == true;
-                                              final String taskText =
-                                                  item['text']?.toString() ??
-                                                  '';
-                                              if (taskText.isEmpty) {
-                                                return const SizedBox.shrink();
-                                              }
-                                              return Padding(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      vertical: 1.0,
-                                                    ),
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                      isChecked
-                                                          ? Icons.check_box
-                                                          : Icons
-                                                              .check_box_outline_blank,
-                                                      size:
-                                                          isLandscape ? 12 : 14,
-                                                      color:
-                                                          Theme.of(context)
-                                                              .colorScheme
-                                                              .onSurfaceVariant,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Flexible(
-                                                      child: Text(
-                                                        taskText,
-                                                        style: Theme.of(
-                                                          context,
-                                                        ).textTheme.bodySmall?.copyWith(
-                                                          fontSize:
+                                    if (actualChecklistPresent)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 4.0,
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children:
+                                              checklists.expand<Widget>((
+                                                checklistData,
+                                              ) {
+                                                final items =
+                                                    (checklistData['checklistItems']
+                                                            as List<dynamic>?)
+                                                        ?.map(
+                                                          (e) => Map<
+                                                            String,
+                                                            dynamic
+                                                          >.from(e),
+                                                        )
+                                                        .toList() ??
+                                                    [];
+                                                return items.take(isLandscape ? 1 : 3).map<
+                                                  Widget
+                                                >((item) {
+                                                  final bool isChecked =
+                                                      item['checked'] == true;
+                                                  final String taskText =
+                                                      item['text']
+                                                          ?.toString() ??
+                                                      '';
+                                                  if (taskText.isEmpty) {
+                                                    return const SizedBox.shrink();
+                                                  }
+                                                  return Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 1.0,
+                                                        ),
+                                                    child: Row(
+                                                      children: [
+                                                        Icon(
+                                                          isChecked
+                                                              ? Icons.check_box
+                                                              : Icons
+                                                                  .check_box_outline_blank,
+                                                          size:
                                                               isLandscape
                                                                   ? 12
                                                                   : 14,
@@ -815,172 +833,208 @@ class _ArchiveState extends State<Archive> {
                                                               Theme.of(context)
                                                                   .colorScheme
                                                                   .onSurfaceVariant,
-                                                          decoration:
-                                                              isChecked
-                                                                  ? TextDecoration
-                                                                      .lineThrough
-                                                                  : null,
                                                         ),
-                                                        maxLines: 1,
-                                                        overflow:
-                                                            TextOverflow
-                                                                .ellipsis,
+                                                        const SizedBox(
+                                                          width: 4,
+                                                        ),
+                                                        Flexible(
+                                                          child: Text(
+                                                            taskText,
+                                                            style: Theme.of(
+                                                              context,
+                                                            ).textTheme.bodySmall?.copyWith(
+                                                              fontSize:
+                                                                  isLandscape
+                                                                      ? 12
+                                                                      : 14,
+                                                              color:
+                                                                  Theme.of(
+                                                                        context,
+                                                                      )
+                                                                      .colorScheme
+                                                                      .onSurfaceVariant,
+                                                              decoration:
+                                                                  isChecked
+                                                                      ? TextDecoration
+                                                                          .lineThrough
+                                                                      : null,
+                                                            ),
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                }).toList();
+                                              }).toList(),
+                                        ),
+                                      ),
+                                    if (hasImages && showImagesInCard)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 4.0,
+                                        ),
+                                        child: Builder(
+                                          builder: (context) {
+                                            final bool shouldImageExpand =
+                                                !actualTextContent &&
+                                                !actualChecklistPresent &&
+                                                !actualVoiceNotePresent;
+
+                                            Widget imageWidget;
+                                            if (imagePaths.length == 1) {
+                                              imageWidget = ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                child: Container(
+                                                  width: double.infinity,
+                                                  constraints: BoxConstraints(
+                                                    maxHeight:
+                                                        shouldImageExpand
+                                                            ? double.infinity
+                                                            : 120,
+                                                  ),
+                                                  child: Image.file(
+                                                    File(imagePaths[0]),
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder:
+                                                        (
+                                                          context,
+                                                          error,
+                                                          stackTrace,
+                                                        ) => Icon(
+                                                          Icons.broken_image,
+                                                          size: 40,
+                                                          color:
+                                                              Theme.of(context)
+                                                                  .colorScheme
+                                                                  .onSurfaceVariant,
+                                                        ),
+                                                  ),
+                                                ),
+                                              );
+                                            } else {
+                                              imageWidget = GridView.builder(
+                                                shrinkWrap: true,
+                                                physics:
+                                                    const NeverScrollableScrollPhysics(),
+                                                gridDelegate:
+                                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                                      crossAxisCount: 2,
+                                                      crossAxisSpacing: 4,
+                                                      mainAxisSpacing: 4,
+                                                      childAspectRatio: 1,
+                                                    ),
+                                                itemCount:
+                                                    imagePaths.length > 4
+                                                        ? 4
+                                                        : imagePaths.length,
+                                                itemBuilder: (
+                                                  context,
+                                                  imgIndex,
+                                                ) {
+                                                  return ClipRRect(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                    child: Image.file(
+                                                      File(
+                                                        imagePaths[imgIndex],
+                                                      ),
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder:
+                                                          (
+                                                            context,
+                                                            error,
+                                                            stackTrace,
+                                                          ) => Icon(
+                                                            Icons.broken_image,
+                                                            size: 40,
+                                                            color:
+                                                                Theme.of(
+                                                                      context,
+                                                                    )
+                                                                    .colorScheme
+                                                                    .onSurfaceVariant,
+                                                          ),
+                                                    ),
+                                                  );
+                                                },
+                                              );
+                                              if (imagePaths.length > 4) {
+                                                imageWidget = Stack(
+                                                  alignment: Alignment.center,
+                                                  children: [
+                                                    imageWidget,
+                                                    Positioned.fill(
+                                                      child: Container(
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.black
+                                                              .withOpacity(0.3),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                8,
+                                                              ),
+                                                        ),
+                                                        child: Center(
+                                                          child: Text(
+                                                            '+${imagePaths.length - 4}',
+                                                            style:
+                                                                const TextStyle(
+                                                                  color:
+                                                                      Colors
+                                                                          .white,
+                                                                  fontSize: 20,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                ),
+                                                          ),
+                                                        ),
                                                       ),
                                                     ),
                                                   ],
-                                                ),
-                                              );
-                                            }).toList();
-                                          }).toList(),
-                                    ),
-                                  ),
-                                if (hasImages && showImagesInCard)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4.0),
-                                    child: Builder(
-                                      builder: (context) {
-                                        final bool shouldImageExpand =
-                                            !actualTextContent &&
-                                            !actualChecklistPresent &&
-                                            !actualVoiceNotePresent;
+                                                );
+                                              }
+                                            }
 
-                                        Widget imageWidget;
-                                        if (imagePaths.length == 1) {
-                                          imageWidget = ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            child: Container(
-                                              width: double.infinity,
-                                              constraints: BoxConstraints(
-                                                maxHeight:
-                                                    shouldImageExpand
-                                                        ? double.infinity
-                                                        : 120,
-                                              ),
-                                              child: Image.file(
-                                                File(imagePaths[0]),
-                                                fit: BoxFit.cover,
-                                                errorBuilder:
-                                                    (
-                                                      context,
-                                                      error,
-                                                      stackTrace,
-                                                    ) => Icon(
-                                                      Icons.broken_image,
-                                                      size: 40,
-                                                      color:
-                                                          Theme.of(context)
-                                                              .colorScheme
-                                                              .onSurfaceVariant,
-                                                    ),
-                                              ),
-                                            ),
-                                          );
-                                        } else {
-                                          imageWidget = GridView.builder(
-                                            shrinkWrap: true,
-                                            physics:
-                                                const NeverScrollableScrollPhysics(),
-                                            gridDelegate:
-                                                SliverGridDelegateWithFixedCrossAxisCount(
-                                                  crossAxisCount: 2,
-                                                  crossAxisSpacing: 4,
-                                                  mainAxisSpacing: 4,
-                                                  childAspectRatio: 1,
-                                                ),
-                                            itemCount:
-                                                imagePaths.length > 4
-                                                    ? 4
-                                                    : imagePaths.length,
-                                            itemBuilder: (context, imgIndex) {
-                                              return ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                child: Image.file(
-                                                  File(imagePaths[imgIndex]),
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder:
-                                                      (
-                                                        context,
-                                                        error,
-                                                        stackTrace,
-                                                      ) => Icon(
-                                                        Icons.broken_image,
-                                                        size: 40,
-                                                        color:
-                                                            Theme.of(context)
-                                                                .colorScheme
-                                                                .onSurfaceVariant,
-                                                      ),
-                                                ),
-                                              );
-                                            },
-                                          );
-                                          if (imagePaths.length > 4) {
-                                            imageWidget = Stack(
-                                              alignment: Alignment.center,
-                                              children: [
-                                                imageWidget,
-                                                Positioned.fill(
-                                                  child: Container(
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.black
-                                                          .withOpacity(0.3),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8,
-                                                          ),
-                                                    ),
-                                                    child: Center(
-                                                      child: Text(
-                                                        '+${imagePaths.length - 4}',
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 20,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                    ),
+                                            if (shouldImageExpand) {
+                                              return imageWidget;
+                                            } else {
+                                              if (isLandscape &&
+                                                  imagePaths.length > 1) {
+                                                return SizedBox(
+                                                  height: 75,
+                                                  width: double.infinity,
+                                                  child: imageWidget,
+                                                );
+                                              } else {
+                                                return Container(
+                                                  constraints: BoxConstraints(
+                                                    maxHeight:
+                                                        (imagePaths.length == 1)
+                                                            ? (isLandscape
+                                                                ? 80
+                                                                : 120)
+                                                            : 180,
                                                   ),
-                                                ),
-                                              ],
-                                            );
-                                          }
-                                        }
-
-                                        if (shouldImageExpand) {
-                                          return imageWidget;
-                                        } else {
-                                          if (isLandscape &&
-                                              imagePaths.length > 1) {
-                                            return SizedBox(
-                                              height: 75,
-                                              width: double.infinity,
-                                              child: imageWidget,
-                                            );
-                                          } else {
-                                            return Container(
-                                              constraints: BoxConstraints(
-                                                maxHeight:
-                                                    (imagePaths.length == 1)
-                                                        ? (isLandscape
-                                                            ? 80
-                                                            : 120)
-                                                        : 180,
-                                              ),
-                                              width: double.infinity,
-                                              child: imageWidget,
-                                            );
-                                          }
-                                        }
-                                      },
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
+                                                  width: double.infinity,
+                                                  child: imageWidget,
+                                                );
+                                              }
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ],

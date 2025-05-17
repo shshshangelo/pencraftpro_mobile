@@ -116,6 +116,8 @@ class _AddNotePageState extends State<AddNotePage> {
   String? _selectedFolderName;
   // Add new list to track element order
   final List<Map<String, dynamic>> _elementOrder = [];
+  // Add map to store checklist controllers
+  final Map<int, TextEditingController> _checklistControllers = {};
 
   final List<Color> _folderColors = [
     Colors.red,
@@ -258,10 +260,75 @@ class _AddNotePageState extends State<AddNotePage> {
     _collaboratorEmails = widget.collaboratorEmails?.toList() ?? [];
     if (widget.noteId != null) {
       _fetchCollaboratorsFromFirestore();
+      // Add real-time listener for note updates
+      _setupNoteListener();
     }
 
     // Store the initial state after all fields are loaded
     _initialNoteState = _getCurrentNoteState();
+  }
+
+  StreamSubscription? _noteListener;
+
+  void _setupNoteListener() {
+    if (widget.noteId == null) return;
+
+    _noteListener = FirebaseFirestore.instance
+        .collection('notes')
+        .doc(widget.noteId)
+        .snapshots()
+        .listen((snapshot) {
+          if (!snapshot.exists) return;
+
+          final data = snapshot.data()!;
+          final currentUser = FirebaseAuth.instance.currentUser;
+          if (currentUser == null) return;
+
+          // Only update if the change was made by another user
+          if (data['lastModifiedBy'] != currentUser.uid) {
+            setState(() {
+              _titleController.text = data['title'] ?? '';
+              if (data['contentJson'] != null &&
+                  data['contentJson'].isNotEmpty) {
+                final content = data['contentJson'][0];
+                _contentController.text = content['text'] ?? '';
+                _selectedFontWeight =
+                    content['bold'] == true
+                        ? FontWeight.bold
+                        : FontWeight.normal;
+                _isItalic = content['italic'] == true;
+                _isUnderline = content['underline'] == true;
+                _isStrikethrough = content['strikethrough'] == true;
+                _selectedFontFamily = content['fontFamily'] ?? 'Roboto';
+                _contentFontSize =
+                    (content['fontSize'] as num?)?.toDouble() ?? 16.0;
+                if (content['checklistItems'] != null) {
+                  _checklistItems = List<Map<String, dynamic>>.from(
+                    content['checklistItems'],
+                  );
+                }
+              }
+              _isPinned = data['isPinned'] ?? false;
+              _reminder =
+                  data['reminder'] != null
+                      ? DateTime.parse(data['reminder'])
+                      : null;
+              _imagePaths = List<String>.from(data['imagePaths'] ?? []);
+              _voiceNotePath = data['voiceNote'];
+              _labels = List<String>.from(data['labels'] ?? []);
+              _isArchived = data['isArchived'] ?? false;
+              _selectedFolderId = data['folderId'];
+              if (data['folderColor'] != null) {
+                _folderColorMap[_selectedFolderId!] = Color(
+                  data['folderColor'],
+                );
+              }
+              _collaboratorEmails = List<String>.from(
+                data['collaboratorEmails'] ?? [],
+              );
+            });
+          }
+        });
   }
 
   Future<void> _fetchCollaboratorsFromFirestore() async {
@@ -302,6 +369,12 @@ class _AddNotePageState extends State<AddNotePage> {
 
   @override
   void dispose() {
+    // Dispose all checklist controllers
+    for (var controller in _checklistControllers.values) {
+      controller.dispose();
+    }
+    _checklistControllers.clear();
+    _noteListener?.cancel();
     _audioPlayer.stop();
     _audioPlayer.dispose();
     _titleController.dispose();
@@ -401,6 +474,14 @@ class _AddNotePageState extends State<AddNotePage> {
         );
       }
 
+      // Filter out empty checklist items
+      final filteredChecklistItems =
+          _checklistItems
+              .where(
+                (item) => (item['text'] as String?)?.trim().isNotEmpty ?? false,
+              )
+              .toList();
+
       final noteData = {
         'id': noteId,
         'title': _titleController.text.trim(),
@@ -413,7 +494,7 @@ class _AddNotePageState extends State<AddNotePage> {
             'strikethrough': _isStrikethrough,
             'fontFamily': _selectedFontFamily,
             'fontSize': _contentFontSize,
-            'checklistItems': _checklistItems,
+            'checklistItems': filteredChecklistItems,
           },
         ],
         'isPinned': _isPinned,
@@ -440,6 +521,8 @@ class _AddNotePageState extends State<AddNotePage> {
         'createdAt':
             existingNote?['createdAt'] ?? DateTime.now().toIso8601String(),
         'updatedAt': DateTime.now().toIso8601String(),
+        'lastModifiedBy':
+            currentUser.uid, // Add this field to track who made the last change
       };
 
       // Update local storage
@@ -584,12 +667,11 @@ class _AddNotePageState extends State<AddNotePage> {
 
   void _addChecklistItem() {
     setState(() {
+      final index = _checklistItems.length;
       _checklistItems.add({'text': '', 'checked': false});
+      _checklistControllers[index] = TextEditingController();
       // Add to element order at the beginning
-      _elementOrder.insert(0, {
-        'type': 'checklist',
-        'index': _checklistItems.length - 1,
-      });
+      _elementOrder.insert(0, {'type': 'checklist', 'index': index});
     });
   }
 
@@ -1262,7 +1344,8 @@ class _AddNotePageState extends State<AddNotePage> {
   }
 
   void _addLabel() async {
-    List labels = await LabelService.loadLabels();
+    // Always get fresh labels from LabelService
+    List<Label> labels = await LabelService.loadLabels();
     labels = labels.reversed.toList();
 
     await showModalBottomSheet(
@@ -1340,6 +1423,7 @@ class _AddNotePageState extends State<AddNotePage> {
 
                         if (labelName != null && labelName.isNotEmpty) {
                           await LabelService.addLabel(labelName);
+                          // Get fresh labels after adding new one
                           final updatedLabels = await LabelService.loadLabels();
                           setSheetState(() {
                             labels = updatedLabels.reversed.toList();
@@ -1556,6 +1640,11 @@ class _AddNotePageState extends State<AddNotePage> {
 
   Future<void> _removeCollaboratorByEmail(String email) async {
     try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        throw Exception('No authenticated user found.');
+      }
+
       final userQuery =
           await FirebaseFirestore.instance
               .collection('users')
@@ -1570,20 +1659,58 @@ class _AddNotePageState extends State<AddNotePage> {
       }
 
       final collaboratorUid = userQuery.docs.first.id;
-
       final noteRef = FirebaseFirestore.instance
           .collection('notes')
           .doc(widget.noteId);
+      final noteDoc = await noteRef.get();
 
+      if (!noteDoc.exists) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Note not found.')));
+        return;
+      }
+
+      final noteData = noteDoc.data()!;
+      final owner = noteData['owner'] as String?;
+      final currentCollaborators = List<String>.from(
+        noteData['collaborators'] ?? [],
+      );
+      final currentCollaboratorEmails = List<String>.from(
+        noteData['collaboratorEmails'] ?? [],
+      );
+
+      // Check if the current user is the owner or the collaborator being removed
+      if (owner != currentUser.uid &&
+          email.toLowerCase() != currentUser.email?.toLowerCase()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Only the owner can remove other collaborators.'),
+          ),
+        );
+        return;
+      }
+
+      // Remove the collaborator
+      currentCollaborators.remove(collaboratorUid);
+      currentCollaboratorEmails.remove(email.toLowerCase());
+
+      // Update the note
       await noteRef.update({
-        'collaborators': FieldValue.arrayRemove([collaboratorUid]),
-        'collaboratorEmails': FieldValue.arrayRemove([email.toLowerCase()]),
-        'updatedAt': Timestamp.now(),
+        'collaborators': currentCollaborators,
+        'collaboratorEmails': currentCollaboratorEmails,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'lastModifiedBy': currentUser.uid,
       });
 
       setState(() {
         _collaboratorEmails.remove(email.toLowerCase());
       });
+
+      // If the current user removed themselves, close the note
+      if (email.toLowerCase() == currentUser.email?.toLowerCase()) {
+        Navigator.pop(context);
+      }
 
       ScaffoldMessenger.of(
         context,
@@ -2985,6 +3112,15 @@ class _AddNotePageState extends State<AddNotePage> {
                     case 'checklist':
                       final index = element['index'];
                       if (index < _checklistItems.length) {
+                        // Show all checklist items, but track if they're empty
+                        // Ensure controller exists
+                        _checklistControllers.putIfAbsent(index, () {
+                          final controller = TextEditingController(
+                            text: _checklistItems[index]['text'],
+                          );
+                          return controller;
+                        });
+
                         return ListTile(
                           leading: Checkbox(
                             value: _checklistItems[index]['checked'],
@@ -2994,22 +3130,25 @@ class _AddNotePageState extends State<AddNotePage> {
                               });
                             },
                           ),
-                          title: TextFormField(
-                            initialValue: _checklistItems[index]['text'],
+                          title: TextField(
+                            controller: _checklistControllers[index],
                             onChanged: (text) {
                               setState(() {
                                 _checklistItems[index]['text'] = text;
+                                // Remove empty checklist items from element order after editing
+                                if (text.trim().isEmpty &&
+                                    _checklistControllers[index]?.text != '') {
+                                  _elementOrder.remove(element);
+                                }
                               });
                             },
                             decoration: const InputDecoration(
-                              hintText: 'Enter task',
+                              hintText: 'Input List Item',
                               border: InputBorder.none,
                               contentPadding: EdgeInsets.symmetric(
                                 vertical: 5.0,
                               ),
                             ),
-                            textAlign: TextAlign.left,
-                            textDirection: TextDirection.ltr,
                             style: TextStyle(
                               fontSize: _contentFontSize,
                               fontFamily: _selectedFontFamily,

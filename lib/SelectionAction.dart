@@ -190,13 +190,13 @@ class _SelectionActionState extends State<SelectionAction> {
               children: [
                 _buildActionCard(
                   context,
-                  icon: Icons.note_alt_outlined,
+                  icon: Icons.note,
                   title: 'Take Notes',
                   onTap: () => _handleRestrictedAction(context, '/notes'),
                 ),
                 _buildActionCard(
                   context,
-                  icon: Icons.draw_rounded,
+                  icon: Icons.draw,
                   title: 'Start Drawing',
                   onTap: () => _handleRestrictedAction(context, '/drawing'),
                 ),

@@ -232,38 +232,43 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children:
-                      checklistItems.map((task) {
-                        final checked = task['checked'] ?? false;
-                        return Row(
-                          children: [
-                            Checkbox(
-                              value: checked,
-                              onChanged: null,
-                              activeColor:
-                                  Theme.of(context).colorScheme.primary,
-                            ),
-                            Expanded(
-                              child: Text(
-                                task['text'] ?? '',
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.bodyMedium?.copyWith(
-                                  fontSize: 14,
-                                  fontFamily: widget.fontFamily ?? 'Roboto',
-                                  decoration:
-                                      checked
-                                          ? TextDecoration.lineThrough
-                                          : null,
-                                  color:
-                                      Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium?.color,
+                      checklistItems
+                          .where(
+                            (task) => (task['text'] ?? '').trim().isNotEmpty,
+                          )
+                          .map((task) {
+                            final checked = task['checked'] ?? false;
+                            return Row(
+                              children: [
+                                Checkbox(
+                                  value: checked,
+                                  onChanged: null,
+                                  activeColor:
+                                      Theme.of(context).colorScheme.primary,
                                 ),
-                              ),
-                            ),
-                          ],
-                        );
-                      }).toList(),
+                                Expanded(
+                                  child: Text(
+                                    task['text'] ?? '',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium?.copyWith(
+                                      fontSize: 14,
+                                      fontFamily: widget.fontFamily ?? 'Roboto',
+                                      decoration:
+                                          checked
+                                              ? TextDecoration.lineThrough
+                                              : null,
+                                      color:
+                                          Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium?.color,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          })
+                          .toList(),
                 );
               } else {
                 return Padding(

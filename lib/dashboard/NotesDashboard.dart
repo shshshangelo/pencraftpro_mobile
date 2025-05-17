@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use, library_private_types_in_public_api, unused_field
 
 import 'dart:io';
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -38,6 +39,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
     super.initState();
     _checkIfVerifiedAndStartSync();
     _initConnectivity();
+    _setupNoteListener();
 
     // Listen for connectivity changes
     Connectivity().onConnectivityChanged.listen((result) async {
@@ -62,6 +64,55 @@ class _NotesDashboardState extends State<NotesDashboard> {
         }
       }
     });
+  }
+
+  StreamSubscription? _noteListener;
+
+  void _setupNoteListener() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    _noteListener?.cancel();
+
+    // Listen for changes to notes where user is owner or collaborator
+    _noteListener = FirebaseFirestore.instance
+        .collection('notes')
+        .where('owner', isEqualTo: user.uid)
+        .snapshots()
+        .listen((snapshot) {
+          if (!mounted) return;
+          _handleNoteChanges(snapshot);
+        });
+
+    // Also listen for notes where user is a collaborator
+    FirebaseFirestore.instance
+        .collection('notes')
+        .where('collaborators', arrayContains: user.uid)
+        .snapshots()
+        .listen((snapshot) {
+          if (!mounted) return;
+          _handleNoteChanges(snapshot);
+        });
+  }
+
+  void _handleNoteChanges(QuerySnapshot snapshot) {
+    for (var change in snapshot.docChanges) {
+      final noteData = change.doc.data() as Map<String, dynamic>?;
+      if (noteData == null) continue;
+
+      final noteId = change.doc.id;
+      noteData['id'] = noteId;
+
+      setState(() {
+        final index = notes.indexWhere((n) => n['id'] == noteId);
+        if (index != -1) {
+          notes[index] = noteData;
+        } else {
+          notes.add(noteData);
+        }
+      });
+    }
+    _saveNotesToPrefs();
   }
 
   Future<void> _initConnectivity() async {
@@ -248,6 +299,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
 
   @override
   void dispose() {
+    _noteListener?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -270,6 +322,25 @@ class _NotesDashboardState extends State<NotesDashboard> {
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+
+    // Check if user has permission to add collaborators
+    if (id != null && collaboratorEmails != null) {
+      final noteRef = FirebaseFirestore.instance.collection('notes').doc(id);
+      final noteDoc = await noteRef.get();
+      if (noteDoc.exists) {
+        final noteData = noteDoc.data();
+        final owner = noteData?['owner'] as String?;
+
+        // If user is not the owner, they can't add new collaborators
+        if (owner != user.uid) {
+          // Keep existing collaborators, only allow removal
+          final existingCollaborators = List<String>.from(
+            noteData?['collaboratorEmails'] ?? [],
+          );
+          collaboratorEmails = existingCollaborators;
+        }
+      }
+    }
 
     // Create a temporary note map to check if it's empty
     final tempNote = {
@@ -819,6 +890,190 @@ class _NotesDashboardState extends State<NotesDashboard> {
     );
   }
 
+  Future<void> _removeCollaborator(String noteId, String emailToRemove) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Get current user's email
+    final currentUserEmail = user.email;
+    if (currentUserEmail == null) return;
+
+    // Show confirmation dialog
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(
+              emailToRemove == currentUserEmail
+                  ? 'Remove Yourself from Collaboration?'
+                  : 'Remove Collaborator?',
+              textAlign: TextAlign.center,
+            ),
+            content: Text(
+              emailToRemove == currentUserEmail
+                  ? 'You will no longer have access to this note. This action cannot be undone.'
+                  : 'Are you sure you want to remove this collaborator?',
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                  foregroundColor: Theme.of(context).colorScheme.onError,
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Remove'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final noteRef = FirebaseFirestore.instance
+          .collection('notes')
+          .doc(noteId);
+      final noteDoc = await noteRef.get();
+
+      if (!noteDoc.exists) return;
+
+      final noteData = noteDoc.data();
+      if (noteData == null) return;
+
+      final currentCollaborators = List<String>.from(
+        noteData['collaboratorEmails'] ?? [],
+      );
+      final currentCollaboratorUIDs = List<String>.from(
+        noteData['collaborators'] ?? [],
+      );
+      final owner = noteData['owner'] as String?;
+
+      // Remove the collaborator
+      currentCollaborators.remove(emailToRemove);
+
+      // If user is removing themselves, we need to handle it differently
+      if (emailToRemove == currentUserEmail) {
+        // Get the collaborator's UID
+        final userQuery =
+            await FirebaseFirestore.instance
+                .collection('users')
+                .where('email', isEqualTo: emailToRemove)
+                .get();
+
+        if (userQuery.docs.isNotEmpty) {
+          final collaboratorUID = userQuery.docs.first.id;
+          currentCollaboratorUIDs.remove(collaboratorUID);
+        }
+
+        // Update Firestore
+        await noteRef.update({
+          'collaboratorEmails': currentCollaborators,
+          'collaborators': currentCollaboratorUIDs,
+          'updatedAt': DateTime.now().toIso8601String(),
+        });
+
+        // If the user is not the owner, remove the note from their view
+        if (owner != user.uid) {
+          // Remove note from local state
+          setState(() {
+            notes.removeWhere((note) => note['id'] == noteId);
+          });
+
+          // Update SharedPreferences
+          final prefs = await SharedPreferences.getInstance();
+          final notesString = prefs.getString('notes');
+          if (notesString != null) {
+            final List<dynamic> notesList = jsonDecode(notesString);
+            notesList.removeWhere((note) => note['id'] == noteId);
+            await prefs.setString('notes', jsonEncode(notesList));
+          }
+
+          // Cancel current listener and set up a new one
+          _noteListener?.cancel();
+          _setupNoteListener();
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('You have been removed from the collaboration.'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      } else {
+        // If removing another collaborator
+        // Get the collaborator's UID
+        final userQuery =
+            await FirebaseFirestore.instance
+                .collection('users')
+                .where('email', isEqualTo: emailToRemove)
+                .get();
+
+        if (userQuery.docs.isNotEmpty) {
+          final collaboratorUID = userQuery.docs.first.id;
+          currentCollaboratorUIDs.remove(collaboratorUID);
+        }
+
+        // Update Firestore
+        await noteRef.update({
+          'collaboratorEmails': currentCollaborators,
+          'collaborators': currentCollaboratorUIDs,
+          'updatedAt': DateTime.now().toIso8601String(),
+        });
+
+        // Update local state
+        setState(() {
+          final index = notes.indexWhere((note) => note['id'] == noteId);
+          if (index != -1) {
+            notes[index]['collaboratorEmails'] = currentCollaborators;
+            notes[index]['collaborators'] = currentCollaboratorUIDs;
+          }
+        });
+
+        // Update SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        final notesString = prefs.getString('notes');
+        if (notesString != null) {
+          final List<dynamic> notesList = jsonDecode(notesString);
+          final noteIndex = notesList.indexWhere(
+            (note) => note['id'] == noteId,
+          );
+          if (noteIndex != -1) {
+            notesList[noteIndex]['collaboratorEmails'] = currentCollaborators;
+            notesList[noteIndex]['collaborators'] = currentCollaboratorUIDs;
+            await prefs.setString('notes', jsonEncode(notesList));
+          }
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '$emailToRemove has been removed from the collaboration.',
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to remove collaborator. Please try again.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -1083,10 +1338,51 @@ class _NotesDashboardState extends State<NotesDashboard> {
                         ),
                       ],
             ),
-            body: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Padding(
-                padding: EdgeInsets.all(padding),
+            body: Padding(
+              padding: EdgeInsets.all(padding),
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  final connectivityResult =
+                      await Connectivity().checkConnectivity();
+                  final isOffline =
+                      connectivityResult == ConnectivityResult.none;
+
+                  if (!isOffline) {
+                    try {
+                      await _loadNotesFromFirestore();
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Notes refreshed successfully.'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      debugPrint('⚠️ Failed to load notes from Firestore: $e');
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Failed to refresh shared notes. Using local storage.',
+                            ),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    }
+                  } else {
+                    await _loadNotesFromPrefs();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Refreshed from local storage.'),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  }
+                },
                 child:
                     filteredNotes.isEmpty
                         ? SizedBox(
@@ -1124,8 +1420,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
                           ),
                         )
                         : GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
+                          physics: const AlwaysScrollableScrollPhysics(),
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: crossAxisCount,
@@ -1273,151 +1568,56 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                   children: [
                                     Padding(
                                       padding: EdgeInsets.all(padding),
-                                      child: SingleChildScrollView(
-                                        physics:
-                                            const AlwaysScrollableScrollPhysics(),
-                                        child: ConstrainedBox(
-                                          constraints: BoxConstraints(
-                                            maxHeight: isLandscape ? 200 : 300,
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              ClipRect(
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    if (hasImages)
-                                                      Icon(
-                                                        Icons.image,
-                                                        size:
-                                                            isLandscape
-                                                                ? 12
-                                                                : 14,
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          return Container(
+                                            height: isLandscape ? 200 : 300,
+                                            child: SingleChildScrollView(
+                                              physics:
+                                                  const NeverScrollableScrollPhysics(),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  if (actualCollaboratorsPresent)
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 4,
+                                                          ),
+                                                      decoration: BoxDecoration(
                                                         color:
-                                                            Theme.of(context)
-                                                                .colorScheme
-                                                                .onSurfaceVariant,
+                                                            Colors
+                                                                .purple
+                                                                .shade100,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              12,
+                                                            ),
                                                       ),
-                                                    if (actualVoiceNotePresent)
-                                                      Icon(
-                                                        Icons.mic,
-                                                        size:
-                                                            isLandscape
-                                                                ? 12
-                                                                : 14,
-                                                        color:
-                                                            Theme.of(context)
-                                                                .colorScheme
-                                                                .onSurfaceVariant,
-                                                      ),
-                                                    if (actualChecklistPresent) // Add this condition
-                                                      Icon(
-                                                        Icons.checklist,
-                                                        size:
-                                                            isLandscape
-                                                                ? 12
-                                                                : 14,
-                                                        color:
-                                                            Theme.of(context)
-                                                                .colorScheme
-                                                                .onSurfaceVariant,
-                                                      ),
-                                                    if (note['folderId'] !=
-                                                        null)
-                                                      Icon(
-                                                        Icons.bookmark,
-                                                        size:
-                                                            isLandscape
-                                                                ? 12
-                                                                : 14,
-                                                        color:
-                                                            note['folderColor'] !=
-                                                                    null
-                                                                ? Color(
-                                                                  note['folderColor'],
-                                                                )
-                                                                : Theme.of(
+                                                      child: Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          Icon(
+                                                            Icons.people,
+                                                            size:
+                                                                isLandscape
+                                                                    ? 12
+                                                                    : 14,
+                                                            color:
+                                                                Theme.of(
                                                                       context,
                                                                     )
                                                                     .colorScheme
-                                                                    .primary,
-                                                      ),
-                                                    if (isPinned)
-                                                      Icon(
-                                                        Icons.push_pin,
-                                                        size:
-                                                            isLandscape
-                                                                ? 12
-                                                                : 14,
-                                                        color:
-                                                            Theme.of(context)
-                                                                .colorScheme
-                                                                .onSurfaceVariant,
-                                                      ),
-                                                  ].whereType<Icon>().fold<
-                                                    List<Widget>
-                                                  >([], (prev, elm) {
-                                                    if (prev.isNotEmpty) {
-                                                      prev.add(
-                                                        SizedBox(
-                                                          width:
-                                                              isLandscape
-                                                                  ? 2
-                                                                  : 4,
-                                                        ),
-                                                      );
-                                                    }
-                                                    prev.add(elm);
-                                                    return prev;
-                                                  }),
-                                                ),
-                                              ),
-                                              if (actualCollaboratorsPresent)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        bottom: 4.0,
-                                                      ),
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 8,
-                                                          vertical: 4,
-                                                        ),
-                                                    decoration: BoxDecoration(
-                                                      color:
-                                                          Colors
-                                                              .purple
-                                                              .shade100,
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            12,
+                                                                    .onSurfaceVariant,
                                                           ),
-                                                    ),
-                                                    child: Row(
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        Icon(
-                                                          Icons.people,
-                                                          size:
-                                                              isLandscape
-                                                                  ? 12
-                                                                  : 14,
-                                                          color:
-                                                              Theme.of(context)
-                                                                  .colorScheme
-                                                                  .onSurfaceVariant,
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 4,
-                                                        ),
-                                                        Flexible(
-                                                          child: Text(
+                                                          const SizedBox(
+                                                            width: 4,
+                                                          ),
+                                                          Text(
                                                             'Shared Notes',
                                                             style: Theme.of(
                                                               context,
@@ -1433,204 +1633,28 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                                       .colorScheme
                                                                       .onSurfaceVariant,
                                                             ),
-                                                            maxLines: 1,
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
                                                           ),
-                                                        ),
-                                                      ],
+                                                        ],
+                                                      ),
                                                     ),
-                                                  ),
-                                                ),
-                                              if (actualLabelsPresent)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        top: 2,
-                                                      ),
-                                                  child: Wrap(
-                                                    spacing: 2,
-                                                    runSpacing: 2,
-                                                    children:
-                                                        (note['labels']
-                                                                as List<
-                                                                  dynamic
-                                                                >)
-                                                            .take(2)
-                                                            .map<Widget>((
-                                                              label,
-                                                            ) {
-                                                              return Chip(
-                                                                padding:
-                                                                    EdgeInsets
-                                                                        .zero,
-                                                                labelPadding:
-                                                                    const EdgeInsets.symmetric(
-                                                                      horizontal:
-                                                                          4,
-                                                                    ),
-                                                                materialTapTargetSize:
-                                                                    MaterialTapTargetSize
-                                                                        .shrinkWrap,
-                                                                label: Row(
-                                                                  mainAxisSize:
-                                                                      MainAxisSize
-                                                                          .min,
-                                                                  children: [
-                                                                    Icon(
-                                                                      Icons
-                                                                          .label_important,
-                                                                      size:
-                                                                          isLandscape
-                                                                              ? 8
-                                                                              : 10,
-                                                                      color:
-                                                                          Theme.of(
-                                                                            context,
-                                                                          ).colorScheme.onSurfaceVariant,
-                                                                    ),
-                                                                    const SizedBox(
-                                                                      width: 2,
-                                                                    ),
-                                                                    Text(
-                                                                      label,
-                                                                      style: Theme.of(
-                                                                        context,
-                                                                      ).textTheme.bodySmall?.copyWith(
-                                                                        fontSize:
-                                                                            isLandscape
-                                                                                ? 8
-                                                                                : 10,
-                                                                        color:
-                                                                            Theme.of(
-                                                                              context,
-                                                                            ).colorScheme.onPrimaryContainer,
-                                                                      ),
-                                                                    ),
-                                                                  ],
-                                                                ),
-                                                                backgroundColor:
-                                                                    Theme.of(
-                                                                          context,
-                                                                        )
-                                                                        .colorScheme
-                                                                        .primaryContainer,
-                                                              );
-                                                            })
-                                                            .toList(),
-                                                  ),
-                                                ),
-                                              if (actualTitlePresent)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        top: 2.0,
-                                                      ),
-                                                  child: Text(
-                                                    note['title']?.toString() ??
-                                                        'Untitled',
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .titleMedium
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                          fontSize:
+                                                  Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      if (hasImages &&
+                                                          showImagesInCard)
+                                                        Icon(
+                                                          Icons.image,
+                                                          size:
                                                               isLandscape
-                                                                  ? 14
-                                                                  : 16,
+                                                                  ? 12
+                                                                  : 14,
+                                                          color:
+                                                              Theme.of(context)
+                                                                  .colorScheme
+                                                                  .onSurfaceVariant,
                                                         ),
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                              if (actualReminderPresent)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        top: 2.0,
-                                                      ),
-                                                  child: Builder(
-                                                    builder: (context) {
-                                                      final reminder =
-                                                          DateTime.tryParse(
-                                                            note['reminder']
-                                                                .toString(),
-                                                          );
-                                                      if (reminder == null) {
-                                                        return const SizedBox.shrink();
-                                                      }
-                                                      final now =
-                                                          DateTime.now();
-                                                      final isExpired = reminder
-                                                          .isBefore(now);
-                                                      return ClipRect(
-                                                        child: Row(
-                                                          children: [
-                                                            Icon(
-                                                              Icons.alarm,
-                                                              size:
-                                                                  isLandscape
-                                                                      ? 10
-                                                                      : 12,
-                                                              color:
-                                                                  isExpired
-                                                                      ? Theme.of(
-                                                                        context,
-                                                                      ).colorScheme.error
-                                                                      : Theme.of(
-                                                                        context,
-                                                                      ).colorScheme.onSurfaceVariant,
-                                                            ),
-                                                            const SizedBox(
-                                                              width: 2,
-                                                            ),
-                                                            Expanded(
-                                                              child: Text(
-                                                                DateFormat(
-                                                                  'MMM dd, hh:mm a',
-                                                                ).format(
-                                                                  reminder,
-                                                                ),
-                                                                style: Theme.of(
-                                                                  context,
-                                                                ).textTheme.bodySmall?.copyWith(
-                                                                  fontSize:
-                                                                      isLandscape
-                                                                          ? 8
-                                                                          : 10,
-                                                                  color:
-                                                                      isExpired
-                                                                          ? Theme.of(
-                                                                            context,
-                                                                          ).colorScheme.error
-                                                                          : Theme.of(
-                                                                            context,
-                                                                          ).colorScheme.onSurfaceVariant,
-                                                                ),
-                                                                maxLines: 1,
-                                                                overflow:
-                                                                    TextOverflow
-                                                                        .ellipsis,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      );
-                                                    },
-                                                  ),
-                                                ),
-                                              if (actualVoiceNotePresent)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        top: 4.0,
-                                                      ),
-                                                  child: ClipRect(
-                                                    child: Row(
-                                                      children: [
+                                                      if (actualVoiceNotePresent)
                                                         Icon(
                                                           Icons.mic,
                                                           size:
@@ -1640,256 +1664,542 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                           color:
                                                               Theme.of(context)
                                                                   .colorScheme
-                                                                  .primary,
+                                                                  .onSurfaceVariant,
                                                         ),
-                                                        const SizedBox(
-                                                          width: 4,
+                                                      if (actualChecklistPresent)
+                                                        Icon(
+                                                          Icons.checklist,
+                                                          size:
+                                                              isLandscape
+                                                                  ? 12
+                                                                  : 14,
+                                                          color:
+                                                              Theme.of(context)
+                                                                  .colorScheme
+                                                                  .onSurfaceVariant,
                                                         ),
-                                                        Flexible(
-                                                          child: Text(
-                                                            'Voice note attached',
-                                                            style: Theme.of(
-                                                              context,
-                                                            ).textTheme.bodySmall?.copyWith(
+                                                      if (note['folderId'] !=
+                                                          null)
+                                                        Icon(
+                                                          Icons.bookmark,
+                                                          size:
+                                                              isLandscape
+                                                                  ? 12
+                                                                  : 14,
+                                                          color:
+                                                              note['folderColor'] !=
+                                                                      null
+                                                                  ? Color(
+                                                                    note['folderColor'],
+                                                                  )
+                                                                  : Theme.of(
+                                                                        context,
+                                                                      )
+                                                                      .colorScheme
+                                                                      .primary,
+                                                        ),
+                                                      if (isPinned)
+                                                        Icon(
+                                                          Icons.push_pin,
+                                                          size:
+                                                              isLandscape
+                                                                  ? 12
+                                                                  : 14,
+                                                          color:
+                                                              Theme.of(context)
+                                                                  .colorScheme
+                                                                  .onSurfaceVariant,
+                                                        ),
+                                                    ].whereType<Icon>().fold<
+                                                      List<Widget>
+                                                    >([], (prev, elm) {
+                                                      if (prev.isNotEmpty) {
+                                                        prev.add(
+                                                          SizedBox(
+                                                            width:
+                                                                isLandscape
+                                                                    ? 2
+                                                                    : 4,
+                                                          ),
+                                                        );
+                                                      }
+                                                      prev.add(elm);
+                                                      return prev;
+                                                    }),
+                                                  ),
+                                                  if (actualTitlePresent)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            top: 2.0,
+                                                          ),
+                                                      child: Text(
+                                                        note['title']
+                                                                ?.toString() ??
+                                                            'Untitled',
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .titleMedium
+                                                            ?.copyWith(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
                                                               fontSize:
                                                                   isLandscape
-                                                                      ? 10
-                                                                      : 12,
+                                                                      ? 14
+                                                                      : 16,
+                                                            ),
+                                                        maxLines: 1,
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+                                                    ),
+                                                  if (actualReminderPresent)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            top: 2.0,
+                                                          ),
+                                                      child: Builder(
+                                                        builder: (context) {
+                                                          final reminder =
+                                                              DateTime.tryParse(
+                                                                note['reminder']
+                                                                    .toString(),
+                                                              );
+                                                          if (reminder ==
+                                                              null) {
+                                                            return const SizedBox.shrink();
+                                                          }
+                                                          final now =
+                                                              DateTime.now();
+                                                          final isExpired =
+                                                              reminder.isBefore(
+                                                                now,
+                                                              );
+                                                          return ClipRect(
+                                                            child: Row(
+                                                              children: [
+                                                                Icon(
+                                                                  Icons.alarm,
+                                                                  size:
+                                                                      isLandscape
+                                                                          ? 10
+                                                                          : 12,
+                                                                  color:
+                                                                      isExpired
+                                                                          ? Theme.of(
+                                                                            context,
+                                                                          ).colorScheme.error
+                                                                          : Theme.of(
+                                                                            context,
+                                                                          ).colorScheme.onSurfaceVariant,
+                                                                ),
+                                                                const SizedBox(
+                                                                  width: 2,
+                                                                ),
+                                                                Expanded(
+                                                                  child: Text(
+                                                                    DateFormat(
+                                                                      'MMM dd, hh:mm a',
+                                                                    ).format(
+                                                                      reminder,
+                                                                    ),
+                                                                    style: Theme.of(
+                                                                      context,
+                                                                    ).textTheme.bodySmall?.copyWith(
+                                                                      fontSize:
+                                                                          isLandscape
+                                                                              ? 8
+                                                                              : 10,
+                                                                      color:
+                                                                          isExpired
+                                                                              ? Theme.of(
+                                                                                context,
+                                                                              ).colorScheme.error
+                                                                              : Theme.of(
+                                                                                context,
+                                                                              ).colorScheme.onSurfaceVariant,
+                                                                    ),
+                                                                    maxLines: 1,
+                                                                    overflow:
+                                                                        TextOverflow
+                                                                            .ellipsis,
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          );
+                                                        },
+                                                      ),
+                                                    ),
+                                                  if (actualLabelsPresent)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            top: 2,
+                                                          ),
+                                                      child: Wrap(
+                                                        spacing: 2,
+                                                        runSpacing: 2,
+                                                        children:
+                                                            (note['labels']
+                                                                    as List<
+                                                                      dynamic
+                                                                    >)
+                                                                .take(2)
+                                                                .map<Widget>((
+                                                                  label,
+                                                                ) {
+                                                                  return Chip(
+                                                                    padding:
+                                                                        EdgeInsets
+                                                                            .zero,
+                                                                    labelPadding:
+                                                                        const EdgeInsets.symmetric(
+                                                                          horizontal:
+                                                                              4,
+                                                                        ),
+                                                                    materialTapTargetSize:
+                                                                        MaterialTapTargetSize
+                                                                            .shrinkWrap,
+                                                                    label: Row(
+                                                                      mainAxisSize:
+                                                                          MainAxisSize
+                                                                              .min,
+                                                                      children: [
+                                                                        Icon(
+                                                                          Icons
+                                                                              .label_important,
+                                                                          size:
+                                                                              isLandscape
+                                                                                  ? 8
+                                                                                  : 10,
+                                                                          color:
+                                                                              Theme.of(
+                                                                                context,
+                                                                              ).colorScheme.onSurfaceVariant,
+                                                                        ),
+                                                                        const SizedBox(
+                                                                          width:
+                                                                              2,
+                                                                        ),
+                                                                        Text(
+                                                                          label,
+                                                                          style: Theme.of(
+                                                                            context,
+                                                                          ).textTheme.bodySmall?.copyWith(
+                                                                            fontSize:
+                                                                                isLandscape
+                                                                                    ? 8
+                                                                                    : 10,
+                                                                            color:
+                                                                                Theme.of(
+                                                                                  context,
+                                                                                ).colorScheme.onPrimaryContainer,
+                                                                          ),
+                                                                        ),
+                                                                      ],
+                                                                    ),
+                                                                    backgroundColor:
+                                                                        Theme.of(
+                                                                          context,
+                                                                        ).colorScheme.primaryContainer,
+                                                                  );
+                                                                })
+                                                                .toList(),
+                                                      ),
+                                                    ),
+                                                  if (actualTextContent)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            top: 4.0,
+                                                          ),
+                                                      child: Text(
+                                                        firstTextItem,
+                                                        style: Theme.of(
+                                                          context,
+                                                        ).textTheme.bodyMedium?.copyWith(
+                                                          fontSize:
+                                                              isLandscape
+                                                                  ? 12
+                                                                  : 14,
+                                                          fontFamily:
+                                                              textFontFamily,
+                                                          fontWeight:
+                                                              textIsBold
+                                                                  ? FontWeight
+                                                                      .bold
+                                                                  : null,
+                                                          fontStyle:
+                                                              textIsItalic
+                                                                  ? FontStyle
+                                                                      .italic
+                                                                  : null,
+                                                          decoration:
+                                                              textIsUnderline
+                                                                  ? TextDecoration
+                                                                      .underline
+                                                                  : textIsStrikethrough
+                                                                  ? TextDecoration
+                                                                      .lineThrough
+                                                                  : null,
+                                                        ),
+                                                        maxLines: 3,
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+                                                    ),
+                                                  if (actualVoiceNotePresent)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            top: 4.0,
+                                                            bottom: 2.0,
+                                                          ),
+                                                      child: ClipRect(
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons.mic,
+                                                              size:
+                                                                  isLandscape
+                                                                      ? 12
+                                                                      : 14,
                                                               color:
                                                                   Theme.of(
                                                                         context,
                                                                       )
                                                                       .colorScheme
-                                                                      .onSurfaceVariant,
+                                                                      .primary,
                                                             ),
-                                                            maxLines: 1,
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                              if (actualTextContent)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        top: 4.0,
-                                                      ),
-                                                  child: Text(
-                                                    firstTextItem,
-                                                    style: Theme.of(
-                                                      context,
-                                                    ).textTheme.bodyMedium?.copyWith(
-                                                      fontSize: textFontSize,
-                                                      fontFamily:
-                                                          textFontFamily,
-                                                      fontWeight:
-                                                          textIsBold
-                                                              ? FontWeight.bold
-                                                              : FontWeight
-                                                                  .normal,
-                                                      fontStyle:
-                                                          textIsItalic
-                                                              ? FontStyle.italic
-                                                              : FontStyle
-                                                                  .normal,
-                                                      decoration:
-                                                          TextDecoration.combine([
-                                                            if (textIsUnderline)
-                                                              TextDecoration
-                                                                  .underline,
-                                                            if (textIsStrikethrough)
-                                                              TextDecoration
-                                                                  .lineThrough,
-                                                          ]),
-                                                      color:
-                                                          Theme.of(context)
-                                                              .textTheme
-                                                              .bodyMedium
-                                                              ?.color,
-                                                    ),
-                                                    maxLines:
-                                                        isLandscape ? 1 : 2,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                              if (actualChecklistPresent)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        top: 4.0,
-                                                      ),
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children:
-                                                        checklists.expand<
-                                                          Widget
-                                                        >((checklistData) {
-                                                          final items =
-                                                              (checklistData['checklistItems']
-                                                                      as List<
-                                                                        dynamic
-                                                                      >?)
-                                                                  ?.map(
-                                                                    (e) => Map<
-                                                                      String,
-                                                                      dynamic
-                                                                    >.from(e),
-                                                                  )
-                                                                  .toList() ??
-                                                              [];
-                                                          return items.take(isLandscape ? 1 : 3).map<
-                                                            Widget
-                                                          >((item) {
-                                                            final bool
-                                                            isChecked =
-                                                                item['checked'] ==
-                                                                true;
-                                                            final String
-                                                            taskText =
-                                                                item['text']
-                                                                    ?.toString() ??
-                                                                '';
-                                                            if (taskText
-                                                                .isEmpty) {
-                                                              return const SizedBox.shrink();
-                                                            }
-                                                            return Padding(
-                                                              padding:
-                                                                  const EdgeInsets.symmetric(
-                                                                    vertical:
-                                                                        1.0,
-                                                                  ),
-                                                              child: Row(
-                                                                children: [
-                                                                  Icon(
-                                                                    isChecked
-                                                                        ? Icons
-                                                                            .check_box
-                                                                        : Icons
-                                                                            .check_box_outline_blank,
-                                                                    size:
-                                                                        isLandscape
-                                                                            ? 12
-                                                                            : 14,
-                                                                    color:
-                                                                        Theme.of(
-                                                                          context,
-                                                                        ).colorScheme.onSurfaceVariant,
-                                                                  ),
-                                                                  const SizedBox(
-                                                                    width: 4,
-                                                                  ),
-                                                                  Flexible(
-                                                                    child: Text(
-                                                                      taskText,
-                                                                      style: Theme.of(
+                                                            const SizedBox(
+                                                              width: 4,
+                                                            ),
+                                                            Flexible(
+                                                              child: Text(
+                                                                'Voice note attached',
+                                                                style: Theme.of(
+                                                                  context,
+                                                                ).textTheme.bodySmall?.copyWith(
+                                                                  fontSize:
+                                                                      isLandscape
+                                                                          ? 10
+                                                                          : 12,
+                                                                  color:
+                                                                      Theme.of(
                                                                         context,
-                                                                      ).textTheme.bodySmall?.copyWith(
-                                                                        fontSize:
-                                                                            isLandscape
-                                                                                ? 12
-                                                                                : 14,
+                                                                      ).colorScheme.onSurfaceVariant,
+                                                                ),
+                                                                maxLines: 1,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  if (actualChecklistPresent)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            top: 4.0,
+                                                            bottom: 2.0,
+                                                          ),
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children:
+                                                            checklists.expand<
+                                                              Widget
+                                                            >((checklistData) {
+                                                              final items =
+                                                                  (checklistData['checklistItems']
+                                                                          as List<
+                                                                            dynamic
+                                                                          >?)
+                                                                      ?.map(
+                                                                        (
+                                                                          e,
+                                                                        ) => Map<
+                                                                          String,
+                                                                          dynamic
+                                                                        >.from(
+                                                                          e,
+                                                                        ),
+                                                                      )
+                                                                      .toList() ??
+                                                                  [];
+                                                              return items
+                                                                  .take(
+                                                                    isLandscape
+                                                                        ? 1
+                                                                        : 2,
+                                                                  )
+                                                                  .map<Widget>((
+                                                                    item,
+                                                                  ) {
+                                                                    final bool
+                                                                    isChecked =
+                                                                        item['checked'] ==
+                                                                        true;
+                                                                    final String
+                                                                    taskText =
+                                                                        item['text']
+                                                                            ?.toString() ??
+                                                                        '';
+                                                                    if (taskText
+                                                                        .isEmpty) {
+                                                                      return const SizedBox.shrink();
+                                                                    }
+                                                                    return Padding(
+                                                                      padding: const EdgeInsets.symmetric(
+                                                                        vertical:
+                                                                            1.0,
+                                                                      ),
+                                                                      child: Row(
+                                                                        children: [
+                                                                          Icon(
+                                                                            isChecked
+                                                                                ? Icons.check_box
+                                                                                : Icons.check_box_outline_blank,
+                                                                            size:
+                                                                                isLandscape
+                                                                                    ? 12
+                                                                                    : 14,
+                                                                            color:
+                                                                                Theme.of(
+                                                                                  context,
+                                                                                ).colorScheme.onSurfaceVariant,
+                                                                          ),
+                                                                          const SizedBox(
+                                                                            width:
+                                                                                4,
+                                                                          ),
+                                                                          Flexible(
+                                                                            child: Text(
+                                                                              taskText,
+                                                                              style: Theme.of(
+                                                                                context,
+                                                                              ).textTheme.bodySmall?.copyWith(
+                                                                                fontSize:
+                                                                                    isLandscape
+                                                                                        ? 12
+                                                                                        : 14,
+                                                                                color:
+                                                                                    Theme.of(
+                                                                                      context,
+                                                                                    ).colorScheme.onSurfaceVariant,
+                                                                                decoration:
+                                                                                    isChecked
+                                                                                        ? TextDecoration.lineThrough
+                                                                                        : null,
+                                                                              ),
+                                                                              maxLines:
+                                                                                  1,
+                                                                              overflow:
+                                                                                  TextOverflow.ellipsis,
+                                                                            ),
+                                                                          ),
+                                                                        ],
+                                                                      ),
+                                                                    );
+                                                                  })
+                                                                  .toList();
+                                                            }).toList(),
+                                                      ),
+                                                    ),
+                                                  if (hasImages &&
+                                                      showImagesInCard)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            top: 4.0,
+                                                          ),
+                                                      child: Builder(
+                                                        builder: (context) {
+                                                          final imagePaths =
+                                                              note['imagePaths']
+                                                                  as List;
+                                                          final bool
+                                                          shouldImageExpand =
+                                                              !actualTextContent &&
+                                                              !actualChecklistPresent &&
+                                                              !actualVoiceNotePresent;
+
+                                                          // Check if content is overflowing
+                                                          final bool
+                                                          isOverflowing =
+                                                              _isContentOverflowing(
+                                                                context,
+                                                              );
+
+                                                          // If content is overflowing and we're not in expand mode, hide images
+                                                          if (isOverflowing &&
+                                                              !shouldImageExpand) {
+                                                            return const SizedBox.shrink();
+                                                          }
+
+                                                          // Normal image display when not overflowing
+                                                          Widget imageWidget;
+                                                          if (imagePaths
+                                                                  .length ==
+                                                              1) {
+                                                            imageWidget = ClipRRect(
+                                                              borderRadius:
+                                                                  BorderRadius.circular(
+                                                                    8,
+                                                                  ),
+                                                              child: Container(
+                                                                width:
+                                                                    double
+                                                                        .infinity,
+                                                                constraints: BoxConstraints(
+                                                                  maxHeight:
+                                                                      shouldImageExpand
+                                                                          ? double
+                                                                              .infinity
+                                                                          : 120,
+                                                                ),
+                                                                child: Image.file(
+                                                                  File(
+                                                                    imagePaths[0],
+                                                                  ),
+                                                                  fit:
+                                                                      BoxFit
+                                                                          .cover,
+                                                                  errorBuilder:
+                                                                      (
+                                                                        context,
+                                                                        error,
+                                                                        stackTrace,
+                                                                      ) => Icon(
+                                                                        Icons
+                                                                            .broken_image,
+                                                                        size:
+                                                                            40,
                                                                         color:
                                                                             Theme.of(
                                                                               context,
                                                                             ).colorScheme.onSurfaceVariant,
-                                                                        decoration:
-                                                                            isChecked
-                                                                                ? TextDecoration.lineThrough
-                                                                                : null,
                                                                       ),
-                                                                      maxLines:
-                                                                          1,
-                                                                      overflow:
-                                                                          TextOverflow
-                                                                              .ellipsis,
-                                                                    ),
-                                                                  ),
-                                                                ],
+                                                                ),
                                                               ),
                                                             );
-                                                          }).toList();
-                                                        }).toList(),
-                                                  ),
-                                                ),
-                                              // Placeholder logic was removed by the user in a previous step.
-                                              // If placeholders are needed, they would go here.
-                                              if (hasImages && showImagesInCard)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        top: 4.0,
-                                                      ),
-                                                  child: Builder(
-                                                    builder: (context) {
-                                                      final imagePaths =
-                                                          note['imagePaths']
-                                                              as List;
-                                                      final bool
-                                                      shouldImageExpand =
-                                                          !actualTextContent &&
-                                                          !actualChecklistPresent &&
-                                                          !actualVoiceNotePresent;
-
-                                                      Widget imageWidget;
-                                                      if (imagePaths.length ==
-                                                          1) {
-                                                        imageWidget = ClipRRect(
-                                                          // Using ClipRRect directly for single image
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                8,
-                                                              ),
-                                                          child: Container(
-                                                            // Container helps with constraints for single image
-                                                            width:
-                                                                double.infinity,
-                                                            constraints: BoxConstraints(
-                                                              maxHeight:
-                                                                  shouldImageExpand
-                                                                      ? double
-                                                                          .infinity
-                                                                      : 120,
-                                                            ), // Expand if it's the only content
-                                                            child: Image.file(
-                                                              File(
-                                                                imagePaths[0],
-                                                              ),
-                                                              fit: BoxFit.cover,
-                                                              errorBuilder:
-                                                                  (
-                                                                    context,
-                                                                    error,
-                                                                    stackTrace,
-                                                                  ) => Icon(
-                                                                    Icons
-                                                                        .broken_image,
-                                                                    size: 40,
-                                                                    color:
-                                                                        Theme.of(
-                                                                          context,
-                                                                        ).colorScheme.onSurfaceVariant,
-                                                                  ),
-                                                            ),
-                                                          ),
-                                                        );
-                                                      } else {
-                                                        // Multiple images
-                                                        imageWidget = GridView.builder(
-                                                          shrinkWrap: true,
-                                                          physics:
-                                                              const NeverScrollableScrollPhysics(),
-                                                          gridDelegate:
-                                                              SliverGridDelegateWithFixedCrossAxisCount(
+                                                          } else {
+                                                            imageWidget = GridView.builder(
+                                                              shrinkWrap: true,
+                                                              physics:
+                                                                  const NeverScrollableScrollPhysics(),
+                                                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                                                                 crossAxisCount:
                                                                     2,
                                                                 crossAxisSpacing:
@@ -1899,131 +2209,131 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                                 childAspectRatio:
                                                                     1,
                                                               ),
-                                                          itemCount:
-                                                              imagePaths.length >
-                                                                      4
-                                                                  ? 4
-                                                                  : imagePaths
-                                                                      .length, // Show max 4 images in grid preview
-                                                          itemBuilder: (
-                                                            context,
-                                                            imgIndex,
-                                                          ) {
-                                                            return ClipRRect(
-                                                              borderRadius:
-                                                                  BorderRadius.circular(
-                                                                    8,
-                                                                  ),
-                                                              child: Image.file(
-                                                                File(
-                                                                  imagePaths[imgIndex],
-                                                                ),
-                                                                fit:
-                                                                    BoxFit
-                                                                        .cover,
-                                                                errorBuilder:
-                                                                    (
-                                                                      context,
-                                                                      error,
-                                                                      stackTrace,
-                                                                    ) => Icon(
-                                                                      Icons
-                                                                          .broken_image,
-                                                                      size: 40,
-                                                                      color:
-                                                                          Theme.of(
-                                                                            context,
-                                                                          ).colorScheme.onSurfaceVariant,
+                                                              itemCount:
+                                                                  imagePaths.length >
+                                                                          4
+                                                                      ? 4
+                                                                      : imagePaths
+                                                                          .length,
+                                                              itemBuilder: (
+                                                                context,
+                                                                imgIndex,
+                                                              ) {
+                                                                return ClipRRect(
+                                                                  borderRadius:
+                                                                      BorderRadius.circular(
+                                                                        8,
+                                                                      ),
+                                                                  child: Image.file(
+                                                                    File(
+                                                                      imagePaths[imgIndex],
                                                                     ),
-                                                              ),
-                                                            );
-                                                          },
-                                                        );
-                                                        if (imagePaths.length >
-                                                            4) {
-                                                          // Add an overlay if more than 4 images
-                                                          imageWidget = Stack(
-                                                            alignment:
-                                                                Alignment
-                                                                    .center,
-                                                            children: [
-                                                              imageWidget,
-                                                              Positioned.fill(
-                                                                child: Container(
-                                                                  decoration: BoxDecoration(
-                                                                    color: Colors
-                                                                        .black
-                                                                        .withOpacity(
-                                                                          0.3,
-                                                                        ),
-                                                                    borderRadius:
-                                                                        BorderRadius.circular(
-                                                                          8,
+                                                                    fit:
+                                                                        BoxFit
+                                                                            .cover,
+                                                                    errorBuilder:
+                                                                        (
+                                                                          context,
+                                                                          error,
+                                                                          stackTrace,
+                                                                        ) => Icon(
+                                                                          Icons
+                                                                              .broken_image,
+                                                                          size:
+                                                                              40,
+                                                                          color:
+                                                                              Theme.of(
+                                                                                context,
+                                                                              ).colorScheme.onSurfaceVariant,
                                                                         ),
                                                                   ),
-                                                                  child: Center(
-                                                                    child: Text(
-                                                                      '+${imagePaths.length - 4}',
-                                                                      style: TextStyle(
-                                                                        color:
-                                                                            Colors.white,
-                                                                        fontSize:
-                                                                            20,
-                                                                        fontWeight:
-                                                                            FontWeight.bold,
+                                                                );
+                                                              },
+                                                            );
+                                                            if (imagePaths
+                                                                    .length >
+                                                                4) {
+                                                              imageWidget = Stack(
+                                                                alignment:
+                                                                    Alignment
+                                                                        .center,
+                                                                children: [
+                                                                  imageWidget,
+                                                                  Positioned.fill(
+                                                                    child: Container(
+                                                                      decoration: BoxDecoration(
+                                                                        color: Colors
+                                                                            .black
+                                                                            .withOpacity(
+                                                                              0.3,
+                                                                            ),
+                                                                        borderRadius:
+                                                                            BorderRadius.circular(
+                                                                              8,
+                                                                            ),
+                                                                      ),
+                                                                      child: Center(
+                                                                        child: Text(
+                                                                          '+${imagePaths.length - 4}',
+                                                                          style: TextStyle(
+                                                                            color:
+                                                                                Colors.white,
+                                                                            fontSize:
+                                                                                20,
+                                                                            fontWeight:
+                                                                                FontWeight.bold,
+                                                                          ),
+                                                                        ),
                                                                       ),
                                                                     ),
                                                                   ),
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          );
-                                                        }
-                                                      }
+                                                                ],
+                                                              );
+                                                            }
+                                                          }
 
-                                                      if (shouldImageExpand) {
-                                                        return imageWidget; // Let it take available space if it's the main content
-                                                      } else {
-                                                        // This is the start of the block we are modifying: when shouldImageExpand is false
-                                                        // Check if it's landscape AND there are multiple images
-                                                        if (isLandscape &&
-                                                            imagePaths.length >
-                                                                1) {
-                                                          // Yes: Landscape, multiple images, and other content is present.
-                                                          // Use a SizedBox with a specific, smaller height for the image grid.
-                                                          return SizedBox(
-                                                            height:
-                                                                75, // Specific height for landscape multi-image preview
-                                                            width:
-                                                                double.infinity,
-                                                            child:
-                                                                imageWidget, // imageWidget is already the GridView (possibly in a Stack for +N)
-                                                          );
-                                                        } else {
-                                                          // No: It's either portrait with multiple images, OR it's a single image (in any orientation).
-                                                          // In these cases, use the existing Container with BoxConstraints.
-                                                          return Container(
-                                                            constraints: BoxConstraints(
-                                                              maxHeight:
-                                                                  (imagePaths.length ==
-                                                                          1)
-                                                                      ? (isLandscape
-                                                                          ? 80
-                                                                          : 120) // Single image (landscape height is 80, portrait 120)
-                                                                      : 180, // Multiple images, portrait only (height 180)
-                                                            ),
-                                                            width:
-                                                                double.infinity,
-                                                            child: imageWidget,
-                                                          );
-                                                        }
-                                                      } // This is the end of the block we are modifying
-                                                    },
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                        ),
+                                                          if (shouldImageExpand) {
+                                                            return imageWidget;
+                                                          } else {
+                                                            if (isLandscape &&
+                                                                imagePaths
+                                                                        .length >
+                                                                    1) {
+                                                              return SizedBox(
+                                                                height: 75,
+                                                                width:
+                                                                    double
+                                                                        .infinity,
+                                                                child:
+                                                                    imageWidget,
+                                                              );
+                                                            } else {
+                                                              return Container(
+                                                                constraints: BoxConstraints(
+                                                                  maxHeight:
+                                                                      (imagePaths.length ==
+                                                                              1)
+                                                                          ? (isLandscape
+                                                                              ? 80
+                                                                              : 120)
+                                                                          : 180,
+                                                                ),
+                                                                width:
+                                                                    double
+                                                                        .infinity,
+                                                                child:
+                                                                    imageWidget,
+                                                              );
+                                                            }
+                                                          }
+                                                        },
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        },
                                       ),
                                     ),
                                     if (isSelected)
@@ -2073,5 +2383,52 @@ class _NotesDashboardState extends State<NotesDashboard> {
         },
       ),
     );
+  }
+
+  bool _isContentOverflowing(BuildContext context) {
+    final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return false;
+
+    final size = renderBox.size;
+    final maxHeight =
+        MediaQuery.of(context).orientation == Orientation.landscape
+            ? 200.0
+            : 300.0;
+
+    // Get the current note's content
+    final note = context.findAncestorWidgetOfExactType<Card>()?.child;
+    if (note == null) return false;
+
+    // Check if we have multiple content elements
+    bool hasMultipleContent = false;
+    if (note is Padding) {
+      final content = note.child;
+      if (content is LayoutBuilder) {
+        final builder = content.builder;
+        if (builder != null) {
+          final result = builder(context, BoxConstraints());
+          if (result is SingleChildScrollView) {
+            final child = result.child;
+            if (child is Container) {
+              final column = child.child;
+              if (column is Column) {
+                // Count non-empty content elements
+                int contentCount = 0;
+                for (var widget in column.children) {
+                  if (widget is Padding && widget.child != null) {
+                    contentCount++;
+                  }
+                }
+                hasMultipleContent =
+                    contentCount >
+                    3; // Increased threshold to 3 content elements
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return size.height > maxHeight || hasMultipleContent;
   }
 }

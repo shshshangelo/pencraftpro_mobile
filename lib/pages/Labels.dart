@@ -27,7 +27,7 @@ class _LabelsState extends State<Labels> {
   void initState() {
     super.initState();
     _loadNotesFromPrefs();
-    _syncNoteLabelsToLabelService(); // ← ADD THIS
+    _syncNoteLabelsToLabelService();
   }
 
   void _showRenameDialog(String oldName) async {
@@ -39,59 +39,67 @@ class _LabelsState extends State<Labels> {
           (context) => AlertDialog(
             title: Text(
               'Rename Label',
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-
             content: TextField(
               controller: controller,
               style:
                   Theme.of(
                     context,
-                  ).textTheme.bodyMedium, // ← ito yung default text style
-              decoration: const InputDecoration(
+                  ).textTheme.bodyMedium, // <-- default font size for input
+              decoration: InputDecoration(
                 hintText: 'New label name',
-                border: OutlineInputBorder(),
+                hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).hintColor,
+                ),
+                border: const OutlineInputBorder(),
               ),
             ),
-
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                child: Text(
+                  'Cancel',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontSize: 16,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, controller.text.trim()),
-                child: const Text('Save'),
+                child: Text(
+                  'Save',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontSize: 16,
+                    color: Theme.of(context).colorScheme.onPrimary,
+                  ),
+                ),
               ),
             ],
           ),
     );
 
     if (newName != null && newName.isNotEmpty && newName != oldName) {
-      // Update sa LabelService
-      final labels = await LabelService.loadLabels();
-      final index = labels.indexWhere((l) => l.name == oldName);
-      if (index != -1) {
-        labels[index] = Label(id: labels[index].id, name: newName);
-        await LabelService.saveLabels(labels);
+      try {
+        await LabelService.updateLabel(oldName, newName);
+        setState(() {
+          final index = availableLabels.indexWhere((l) => l == oldName);
+          if (index != -1) {
+            availableLabels[index] = newName;
+          }
+        });
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Label renamed to "$newName"')));
+      } catch (e) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error updating label: $e')));
       }
-
-      // Update sa lahat ng notes na may oldName
-      for (var note in notes) {
-        final noteLabels = (note['labels'] as List<dynamic>?) ?? [];
-        if (noteLabels.contains(oldName)) {
-          note['labels'] =
-              noteLabels.map((e) => e == oldName ? newName : e).toList();
-        }
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('notes', jsonEncode(notes));
-
-      setState(() {});
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Label renamed to "$newName"')));
     }
   }
 
@@ -186,36 +194,28 @@ class _LabelsState extends State<Labels> {
     );
 
     if (confirm == true) {
-      // 1. Remove from all notes
-      setState(() {
-        for (var note in notes) {
-          note['labels'] =
-              (note['labels'] as List<dynamic>?)
-                  ?.where((label) => !selectedLabels.contains(label))
-                  .toList() ??
-              [];
+      try {
+        for (String labelName in selectedLabels) {
+          await LabelService.deleteLabel(labelName);
         }
-        isEditing = false;
-      });
 
-      // 2. Remove from LabelService
-      final existing = await LabelService.loadLabels();
-      final updated =
-          existing
-              .where((label) => !selectedLabels.contains(label.name))
-              .toList();
-      await LabelService.saveLabels(updated);
+        final updatedLabels = await LabelService.loadLabels();
+        setState(() {
+          availableLabels = updatedLabels.map((l) => l.name).toList();
+          selectedLabels.clear();
+          isEditing = false;
+        });
 
-      // 3. Save updated notes
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('notes', jsonEncode(notes));
+        await _loadNotesFromPrefs();
 
-      selectedLabels.clear();
-      setState(() {});
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Labels deleted')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Labels deleted')));
+      } catch (e) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error deleting labels: $e')));
+      }
     }
   }
 
@@ -230,6 +230,94 @@ class _LabelsState extends State<Labels> {
       selectedLabels.clear();
       isEditing = false;
     });
+  }
+
+  void _deleteLabel(Label label) async {
+    try {
+      await LabelService.deleteLabel(label.name);
+
+      final updatedLabels = await LabelService.loadLabels();
+
+      setState(() {
+        availableLabels = updatedLabels.map((l) => l.name).toList();
+      });
+
+      await _loadNotesFromPrefs();
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Label "${label.name}" deleted')));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error deleting label: $e')));
+    }
+  }
+
+  void _editLabel(Label label) async {
+    final controller = TextEditingController(text: label.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(
+              'Edit Label',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              style:
+                  Theme.of(
+                    context,
+                  ).textTheme.bodyMedium, // <-- default font size for input
+              decoration: const InputDecoration(
+                hintText: 'Label name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'Cancel',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, controller.text.trim()),
+                child: Text(
+                  'Save',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+    );
+
+    if (newName != null && newName.isNotEmpty && newName != label.name) {
+      try {
+        await LabelService.updateLabel(label.name, newName);
+        setState(() {
+          final index = availableLabels.indexWhere((l) => l == label.name);
+          if (index != -1) {
+            availableLabels[index] = newName;
+          }
+        });
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Label updated to "$newName"')));
+      } catch (e) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error updating label: $e')));
+      }
+    }
   }
 
   @override
@@ -303,15 +391,20 @@ class _LabelsState extends State<Labels> {
                           (ctx) => AlertDialog(
                             title: Text(
                               'Create New Label',
-                              style: Theme.of(context).textTheme.bodyMedium,
+                              style: Theme.of(
+                                context,
+                              ).textTheme.titleLarge?.copyWith(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                             content: TextField(
                               controller: controller,
                               autofocus: true,
                               style:
-                                  Theme.of(
-                                    context,
-                                  ).textTheme.bodyMedium, // default font size
+                                  Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium, // default size for input
                               decoration: InputDecoration(
                                 hintText: 'Label name',
                                 hintStyle: Theme.of(
@@ -322,11 +415,13 @@ class _LabelsState extends State<Labels> {
                                 border: const OutlineInputBorder(),
                               ),
                             ),
-
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx),
-                                child: const Text('Cancel'),
+                                child: Text(
+                                  'Cancel',
+                                  style: Theme.of(context).textTheme.labelLarge,
+                                ),
                               ),
                               ElevatedButton(
                                 onPressed:
@@ -334,7 +429,15 @@ class _LabelsState extends State<Labels> {
                                       ctx,
                                       controller.text.trim(),
                                     ),
-                                child: const Text('Create'),
+                                child: Text(
+                                  'Create',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.labelLarge?.copyWith(
+                                    color:
+                                        Theme.of(context).colorScheme.onPrimary,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -344,7 +447,7 @@ class _LabelsState extends State<Labels> {
                       await LabelService.addLabel(newLabel);
                       setState(() {});
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Label "$newLabel" created')),
+                        SnackBar(content: Text('Label "$newLabel" created.')),
                       );
                     }
                   },
@@ -649,7 +752,15 @@ class _LabelsState extends State<Labels> {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.edit, size: 20),
-                          onPressed: () => _showRenameDialog(label),
+                          onPressed:
+                              () => _editLabel(
+                                Label(
+                                  id:
+                                      DateTime.now().millisecondsSinceEpoch
+                                          .toString(),
+                                  name: label,
+                                ),
+                              ),
                         ),
                         if (isSelected)
                           Icon(
