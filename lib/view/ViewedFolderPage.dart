@@ -140,13 +140,13 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
           children: [
             Text(
               widget.title.isNotEmpty ? widget.title : 'Untitled',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontSize: 24,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 8),
-            if (widget.reminder != null)
+            if (widget.reminder != null) ...[
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Icon(
@@ -170,8 +170,9 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
                   ),
                 ],
               ),
-            const SizedBox(height: 8),
-            if (_folderName != null)
+            ],
+            if (_folderName != null) ...[
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Icon(
@@ -192,8 +193,9 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
                   ),
                 ],
               ),
-            const SizedBox(height: 12),
-            if (widget.labels.isNotEmpty)
+            ],
+            if (widget.labels.isNotEmpty) ...[
+              const SizedBox(height: 12),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
@@ -234,7 +236,11 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
                       );
                     }).toList(),
               ),
-            const SizedBox(height: 16),
+            ],
+            if (widget.contentJson.isNotEmpty ||
+                widget.voiceNote != null ||
+                widget.imagePaths.isNotEmpty)
+              const SizedBox(height: 16),
             ...widget.contentJson.map((item) {
               final checklistItems =
                   item['checklistItems'] as List<dynamic>? ?? [];
@@ -287,6 +293,14 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
                             )
                             .map((task) {
                               final checked = task['checked'] ?? false;
+                              final fontSize = 16.0; // Set default font size
+                              final isBold = false; // Remove bold inheritance
+                              final isItalic =
+                                  false; // Remove italic inheritance
+                              final isUnderline =
+                                  false; // Remove underline inheritance
+                              final isStrikethrough =
+                                  checked; // Only strikethrough if checked
                               return Row(
                                 children: [
                                   Checkbox(
@@ -301,7 +315,15 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
                                       style: Theme.of(
                                         context,
                                       ).textTheme.bodyMedium?.copyWith(
-                                        fontSize: 14,
+                                        fontSize: fontSize,
+                                        fontWeight:
+                                            isBold
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                        fontStyle:
+                                            isItalic
+                                                ? FontStyle.italic
+                                                : FontStyle.normal,
                                         decoration:
                                             checked
                                                 ? TextDecoration.lineThrough
@@ -309,7 +331,7 @@ class _ViewedFolderPageState extends State<ViewedFolderPage> {
                                         color:
                                             Theme.of(
                                               context,
-                                            ).textTheme.bodyMedium?.color,
+                                            ).colorScheme.onSurfaceVariant,
                                       ),
                                     ),
                                   ),

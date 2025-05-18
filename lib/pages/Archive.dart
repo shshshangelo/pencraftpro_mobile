@@ -481,7 +481,7 @@ class _ArchiveState extends State<Archive> {
                       }
                     });
                   } else {
-                    print('Archive - note: ' + note.toString());
+                    print('Archive - note: $note');
                     Navigator.push(
                       context,
                       MaterialPageRoute(

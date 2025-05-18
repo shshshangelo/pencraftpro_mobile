@@ -17,121 +17,67 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 
 // Add these enums and classes
-enum ShapeType { none, rectangle, circle, line }
-
 enum BrushType { normal, calligraphy, dotted, airbrush, marker }
 
-// Add this enum for font styles
-enum FontStyleType { normal, bold, italic, boldItalic, monospace, cursive }
-
-class DrawnShape {
-  final ShapeType type;
-  final Offset startPoint;
-  final Offset endPoint;
-  final Color color;
-  final double strokeWidth;
-  // Add other properties like fill color if needed later
-
-  DrawnShape({
-    required this.type,
-    required this.startPoint,
-    required this.endPoint,
-    required this.color,
-    required this.strokeWidth,
-  });
-
-  // Helper to create a copy with new points, useful for history
-  DrawnShape copyWith({Offset? startPoint, Offset? endPoint}) {
-    return DrawnShape(
-      type: type,
-      startPoint: startPoint ?? this.startPoint,
-      endPoint: endPoint ?? this.endPoint,
-      color: color,
-      strokeWidth: strokeWidth,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'type': type.index,
-    'startPoint': {'dx': startPoint.dx, 'dy': startPoint.dy},
-    'endPoint': {'dx': endPoint.dx, 'dy': endPoint.dy},
-    'color': color.value,
-    'strokeWidth': strokeWidth,
-  };
-
-  static DrawnShape fromJson(Map<String, dynamic> json) => DrawnShape(
-    type: ShapeType.values[json['type']],
-    startPoint: Offset(
-      (json['startPoint']['dx'] as num).toDouble(),
-      (json['startPoint']['dy'] as num).toDouble(),
-    ),
-    endPoint: Offset(
-      (json['endPoint']['dx'] as num).toDouble(),
-      (json['endPoint']['dy'] as num).toDouble(),
-    ),
-    color: Color(json['color']),
-    strokeWidth: (json['strokeWidth'] as num).toDouble(),
-  );
+// Update this enum to include all toolbar buttons and a none option
+enum ActiveTool {
+  none,
+  brush,
+  eraser,
+  eyedropper,
+  image,
+  colorPicker,
+  background,
+  clear,
+  undo,
+  redo,
 }
 
-// Add this class for Text elements
-class DrawnText {
-  final String text;
-  final Offset position;
-  final TextStyle style;
-  final double fontSize;
-  final Color color;
-  final FontStyleType fontStyleType;
+class DrawnLine {
+  List<Offset> path;
+  Color color;
+  double width;
+  BrushType brushType;
+  int? seed;
 
-  DrawnText({
-    required this.text,
-    required this.position,
-    required this.style,
-    required this.fontSize,
-    required this.color,
-    this.fontStyleType = FontStyleType.normal,
-  });
-
-  DrawnText copyWith({
-    String? text,
-    Offset? position,
-    TextStyle? style,
-    double? fontSize,
-    Color? color,
-    FontStyleType? fontStyleType,
-  }) {
-    return DrawnText(
-      text: text ?? this.text,
-      position: position ?? this.position,
-      style: style ?? this.style,
-      fontSize: fontSize ?? this.fontSize,
-      color: color ?? this.color,
-      fontStyleType: fontStyleType ?? this.fontStyleType,
-    );
-  }
+  DrawnLine(this.path, this.color, this.width, this.brushType, {this.seed});
 
   Map<String, dynamic> toJson() => {
-    'text': text,
-    'position': {'dx': position.dx, 'dy': position.dy},
-    'fontSize': fontSize,
+    'path': path.map((o) => {'dx': o.dx, 'dy': o.dy}).toList(),
     'color': color.value,
-    'fontStyleType': fontStyleType.index,
+    'width': width,
+    'brushType': brushType.index,
+    'seed': seed,
   };
 
-  static DrawnText fromJson(Map<String, dynamic> json) => DrawnText(
-    text: json['text'],
-    position: Offset(
-      (json['position']['dx'] as num).toDouble(),
-      (json['position']['dy'] as num).toDouble(),
-    ),
-    style: TextStyle(
-      color: Color(json['color']),
-      fontSize: (json['fontSize'] as num).toDouble(),
-    ),
-    fontSize: (json['fontSize'] as num).toDouble(),
-    color: Color(json['color']),
-    fontStyleType: FontStyleType.values[json['fontStyleType']],
+  static DrawnLine fromJson(Map<String, dynamic> json) => DrawnLine(
+    (json['path'] as List)
+        .map(
+          (p) =>
+              Offset((p['dx'] as num).toDouble(), (p['dy'] as num).toDouble()),
+        )
+        .toList(),
+    Color(json['color']),
+    (json['width'] as num).toDouble(),
+    BrushType.values[json['brushType']],
+    seed: json['seed'],
   );
+
+  DrawnLine copyWith({
+    List<Offset>? path,
+    Color? color,
+    double? width,
+    BrushType? brushType,
+    int? seed,
+  }) {
+    return DrawnLine(
+      path ?? this.path,
+      color ?? this.color,
+      width ?? this.width,
+      brushType ?? this.brushType,
+      seed: seed ?? this.seed,
+    );
+  }
 }
 
 class DrawingCanvasPage extends StatefulWidget {
@@ -162,39 +108,24 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
   int _currentHistoryIndex = -1;
   List<DrawnLine> _lines = [];
   DrawnLine? _currentLine;
-  List<DrawnShape> _shapes = [];
-  List<DrawnText> _texts = []; // <-- Add this
   Color _selectedColor = Colors.black;
   double _strokeWidth = 4.0;
   double _eraserWidth = 4.0;
   bool _isErasing = false;
   Color? _backgroundColor;
+  bool _isModified = false;
+  ActiveTool _activeTool = ActiveTool.brush;
 
   List<ImageData> _images = [];
   int? _activeImageIndex;
   bool _isAdjustingImage = false;
   bool _isEyedropperActive = false;
 
-  // State for shape drawing
-  ShapeType _currentShapeType = ShapeType.none;
-  Offset? _shapeStartPoint;
-  Offset? _currentShapePoint;
-  bool _isDrawingShape = false;
-  bool _isTextToolActive = false;
-  BrushType _currentBrushType = BrushType.normal;
-
   Offset _initialFocalPoint = Offset.zero;
   Offset _initialOffset = Offset.zero;
   double _initialScale = 1.0;
-
-  int? _selectedTextIndex;
-  int? _editingTextIndex;
-  TextEditingController? _editingTextController;
-  FontStyleType _editingFontStyleType = FontStyleType.normal;
-  double _editingFontSize = 32.0;
-  Offset? _dragStartOffset;
-  Offset? _textStartPosition;
   Offset? _eraserPointerPosition;
+  BrushType _currentBrushType = BrushType.normal;
 
   @override
   void initState() {
@@ -203,6 +134,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
     if (widget.initialState != null) {
       // If we have an initial state, load it
       _loadInitialState(widget.initialState!);
+      _isModified = false; // Reset modified flag when loading existing state
     } else if (widget.loadedImage != null) {
       // Otherwise, load the image if provided
       _loadInitialImage(
@@ -211,6 +143,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
         offsetY: widget.initialOffsetY,
         scale: widget.initialScale,
       );
+      _isModified = false; // Reset modified flag when loading existing image
     }
 
     // Try to sync any pending drawings
@@ -272,14 +205,15 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
 
     setState(() {
       _lines = state.lines;
-      _shapes = state.shapes;
-      _texts = state.texts;
-      _backgroundColor = state.backgroundColor;
       _images = loadedImages;
       // Don't save initial state to history
       _history = [];
       _currentHistoryIndex = -1;
+      _isModified = false; // Set to false when loading existing drawing
     });
+    _saveState(
+      markModified: false,
+    ); // Save initial state but don't mark as modified
   }
 
   Future<void> _loadDrawingState() async {
@@ -316,9 +250,6 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
 
         setState(() {
           _lines = state.lines;
-          _shapes = state.shapes;
-          _texts = state.texts;
-          _backgroundColor = state.backgroundColor;
           _images = loadedImages;
         });
       }
@@ -342,11 +273,10 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
     for (var image in _images) {
       image.image.dispose();
     }
-    _editingTextController?.dispose();
     super.dispose();
   }
 
-  void _saveState() {
+  void _saveState({bool markModified = true}) {
     // Create current state
     final currentState = CanvasState(
       lines: List.from(_lines.map((l) => l.copyWith())),
@@ -357,14 +287,18 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
               ImageData(image: img.image, offset: img.offset, scale: img.scale),
         ),
       ),
-      shapes: List.from(_shapes.map((s) => s.copyWith())),
-      texts: List.from(_texts.map((t) => t.copyWith())),
     );
 
     // If this is the first state, just add it
     if (_history.isEmpty) {
       _history.add(currentState);
       _currentHistoryIndex = 0;
+      if (markModified) {
+        setState(() {
+          _isModified = true;
+          print('Drawing modified: [32m[1m[4m[7m$_isModified[0m');
+        });
+      }
       return;
     }
 
@@ -384,6 +318,12 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
     // Add new state
     _history.add(currentState);
     _currentHistoryIndex++;
+    if (markModified) {
+      setState(() {
+        _isModified = true;
+        print('Drawing modified: $_isModified');
+      });
+    }
 
     // Limit history size
     if (_history.length > 50) {
@@ -412,9 +352,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
   bool _areCanvasStatesEqual(CanvasState a, CanvasState b) {
     if (a.lines.length != b.lines.length ||
         a.backgroundColor != b.backgroundColor ||
-        a.images.length != b.images.length ||
-        a.shapes.length != b.shapes.length ||
-        a.texts.length != b.texts.length) {
+        a.images.length != b.images.length) {
       return false;
     }
     // Compare lines
@@ -434,26 +372,6 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
     for (int i = 0; i < a.images.length; i++) {
       if (a.images[i].offset != b.images[i].offset ||
           a.images[i].scale != b.images[i].scale) {
-        return false;
-      }
-    }
-    // Compare shapes
-    for (int i = 0; i < a.shapes.length; i++) {
-      if (a.shapes[i].type != b.shapes[i].type ||
-          a.shapes[i].startPoint != b.shapes[i].startPoint ||
-          a.shapes[i].endPoint != b.shapes[i].endPoint ||
-          a.shapes[i].color != b.shapes[i].color ||
-          a.shapes[i].strokeWidth != b.shapes[i].strokeWidth) {
-        return false;
-      }
-    }
-    // Compare texts
-    for (int i = 0; i < a.texts.length; i++) {
-      if (a.texts[i].text != b.texts[i].text ||
-          a.texts[i].position != b.texts[i].position ||
-          a.texts[i].fontSize != b.texts[i].fontSize ||
-          a.texts[i].color != b.texts[i].color ||
-          a.texts[i].fontStyleType != b.texts[i].fontStyleType) {
         return false;
       }
     }
@@ -488,26 +406,16 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
               ImageData(image: img.image, offset: img.offset, scale: img.scale),
         ),
       );
-      _shapes = List.from(state.shapes.map((s) => s.copyWith()));
-      _texts = List.from(state.texts.map((t) => t.copyWith()));
       _currentLine = null;
       _isAdjustingImage = false;
       _activeImageIndex = null;
-      _isDrawingShape = false;
-      _currentShapeType = ShapeType.none;
-      _shapeStartPoint = null;
-      _currentShapePoint = null;
-      _selectedTextIndex = null;
-      _editingTextIndex = null;
-      _editingTextController?.dispose();
-      _editingTextController = null;
-      _isTextToolActive = false;
+      _saveState();
     });
   }
 
   void _onScaleStart(ScaleStartDetails details) {
-    if (_isEyedropperActive || _isTextToolActive) {
-      return; // Eyedropper or Text tool takes precedence
+    if (_isEyedropperActive) {
+      return; // Eyedropper takes precedence
     }
 
     if (_isErasing) {
@@ -515,17 +423,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
         _eraserPointerPosition = details.localFocalPoint;
       });
     }
-    if (_currentShapeType != ShapeType.none) {
-      // Shape drawing mode
-      setState(() {
-        _isDrawingShape = true;
-        _shapeStartPoint = details.localFocalPoint;
-        _currentShapePoint = details.localFocalPoint;
-        _isErasing = false;
-        _isAdjustingImage = false;
-        _currentLine = null; // Ensure not drawing lines
-      });
-    } else if (_isAdjustingImage && _activeImageIndex != null) {
+    if (_isAdjustingImage && _activeImageIndex != null) {
       _initialFocalPoint = details.focalPoint;
       _initialOffset = _images[_activeImageIndex!].offset;
       _initialScale = _images[_activeImageIndex!].scale;
@@ -535,7 +433,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
-    if (_isEyedropperActive || _isTextToolActive) return;
+    if (_isEyedropperActive) return;
 
     if (_isErasing) {
       setState(() {
@@ -544,11 +442,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
       _erase(details.localFocalPoint);
       return;
     }
-    if (_isDrawingShape && _shapeStartPoint != null) {
-      setState(() {
-        _currentShapePoint = details.localFocalPoint;
-      });
-    } else if (_isAdjustingImage && _activeImageIndex != null) {
+    if (_isAdjustingImage && _activeImageIndex != null) {
       setState(() {
         _images[_activeImageIndex!].scale = _initialScale * details.scale;
         _images[_activeImageIndex!].offset =
@@ -560,44 +454,22 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
-    if (_isEyedropperActive || _isTextToolActive) return;
+    if (_isEyedropperActive) return;
 
     if (_isErasing) {
       setState(() {
         _eraserPointerPosition = null;
       });
     }
-    if (_isDrawingShape &&
-        _shapeStartPoint != null &&
-        _currentShapePoint != null) {
-      setState(() {
-        final newShape = DrawnShape(
-          type: _currentShapeType,
-          startPoint: _shapeStartPoint!,
-          endPoint: _currentShapePoint!,
-          color: _selectedColor,
-          strokeWidth: _strokeWidth,
-        );
-        _shapes.add(newShape);
-        _isDrawingShape = false;
-        _shapeStartPoint = null;
-        _currentShapePoint = null;
-        _saveState();
-      });
-    } else if (_isAdjustingImage && _activeImageIndex != null) {
+    if (_isAdjustingImage && _activeImageIndex != null) {
       _saveState();
     } else if (!_isAdjustingImage) {
       _endDrawing();
-    } else {
-      // For image adjustment, state is saved when "Done Adjusting" is tapped or another tool is selected
-      // _saveState(); // Consider if needed here or handled by other interactions
     }
   }
 
   void _startDrawing(Offset position) {
-    if (!_isAdjustingImage &&
-        _currentShapeType == ShapeType.none &&
-        !_isTextToolActive) {
+    if (!_isAdjustingImage) {
       setState(() {
         _currentLine = DrawnLine(
           [position],
@@ -614,11 +486,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
   }
 
   void _keepDrawing(Offset position) {
-    if (!_isAdjustingImage &&
-        _currentLine != null &&
-        _currentShapeType == ShapeType.none &&
-        !_isTextToolActive) {
-      // Only draw if not in shape mode
+    if (!_isAdjustingImage && _currentLine != null) {
       setState(() {
         if (_currentLine!.path.isEmpty ||
             (_currentLine!.path.last - position).distance > 2.0) {
@@ -864,6 +732,9 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
 
             _activeImageIndex = _images.length - 1;
             _isAdjustingImage = true;
+            _activeTool = ActiveTool.image;
+            _isErasing = false;
+            _isEyedropperActive = false;
             _images[_activeImageIndex!] = ImageData(
               image: frame.image,
               offset: offset,
@@ -941,6 +812,9 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
 
             _activeImageIndex = _images.length - 1;
             _isAdjustingImage = true;
+            _activeTool = ActiveTool.image;
+            _isErasing = false;
+            _isEyedropperActive = false;
             _images[_activeImageIndex!] = ImageData(
               image: frame.image,
               offset: offset,
@@ -1113,51 +987,84 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
       builder:
           (_) => AlertDialog(
             title: const Text('Background Color'),
-            content: BlockPicker(
-              pickerColor: _backgroundColor!,
-              onColorChanged: (color) {
-                setState(() {
-                  _backgroundColor = color;
-                  _saveState();
-                });
-              },
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                BlockPicker(
+                  pickerColor: _backgroundColor!,
+                  onColorChanged: (color) {
+                    setState(() {
+                      _backgroundColor = color;
+                      _saveState();
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done'),
+                ),
+              ],
             ),
           ),
     );
   }
 
   void _clearCanvas() {
+    // Remove the empty check here since the button will be disabled when empty
     setState(() {
       for (var image in _images) {
         image.image.dispose();
       }
       _lines.clear();
       _images.clear();
-      _shapes.clear();
-      _texts.clear(); // <-- Add this
       _backgroundColor = Theme.of(context).scaffoldBackgroundColor;
       _currentLine = null;
       _isAdjustingImage = false;
       _activeImageIndex = null;
-      _isDrawingShape = false;
-      _currentShapeType = ShapeType.none;
-      _shapeStartPoint = null;
-      _currentShapePoint = null;
-      _isTextToolActive = false; // <-- Add this
-      _saveState();
+      _isModified =
+          false; // Set modified flag to FALSE after clearing canvas - nothing to save
+      _saveState(markModified: false); // Save state without marking as modified
     });
+
+    // Show confirmation to user
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Canvas cleared.',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
+        ),
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
   }
 
   Future<bool> _onWillPop() async {
-    // Only show save dialog if there are actual changes (more than just the initial state)
-    if (_history.length > 1) {
+    print('Checking will pop, isModified: $_isModified'); // Debug print
+
+    // Don't show confirmation if the canvas is empty from the beginning (was never modified)
+    bool isCanvasEmpty =
+        _lines.isEmpty &&
+        _images.isEmpty &&
+        _backgroundColor == Theme.of(context).scaffoldBackgroundColor;
+
+    if (_isModified) {
       final result = await showDialog<bool>(
         context: context,
         builder:
             (context) => AlertDialog(
-              title: const Text('Save Drawing?'),
+              title: const Text(
+                'Exit Drawing',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               content: const Text(
-                'Do you want to save your drawing before exiting?',
+                'You have unsaved changes. Would you like to save your drawing before exiting?',
               ),
               actions: [
                 TextButton(
@@ -1181,11 +1088,10 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
         if (!mounted) return false;
         Navigator.pop(context);
         return false;
-      } else {
-        return false;
       }
+      return false; // Stay on the page if user cancels
     }
-    return true;
+    return true; // Allow back navigation if no changes
   }
 
   Color get _iconColor => Theme.of(context).colorScheme.onSurface;
@@ -1209,8 +1115,6 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
       // Save the complete state
       final state = DrawingState(
         lines: _lines,
-        shapes: _shapes,
-        texts: _texts,
         backgroundColor: _backgroundColor!,
         images: await Future.wait(
           _images.map((img) async {
@@ -1250,6 +1154,11 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
       );
       await prefs.setStringList('saved_drawings', savedDrawings);
 
+      setState(() {
+        _isModified = false; // Reset modified flag after saving
+        print('Drawing saved, isModified set to: $_isModified'); // Debug print
+      });
+
       // Show success message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1281,7 +1190,14 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
         // Don't show error to user as this is just a backup
       });
 
-      // Return true to indicate successful save
+      // Update the saved drawings list in the parent page
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const SavedDrawingsPage()),
+        );
+      }
+
       return;
     } catch (e) {
       print('Save failed: $e');
@@ -1303,7 +1219,6 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
           ),
         );
       }
-      // Return false to indicate save failed
       return;
     }
   }
@@ -1427,9 +1342,6 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
 
       setState(() {
         _lines = state.lines;
-        _shapes = state.shapes;
-        _texts = state.texts;
-        _backgroundColor = state.backgroundColor;
         _images = loadedImages;
       });
 
@@ -1515,52 +1427,19 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
     }
   }
 
-  // Helper to get TextStyle from FontStyleType
-  TextStyle _getTextStyle(Color color, double fontSize, FontStyleType type) {
-    switch (type) {
-      case FontStyleType.bold:
-        return TextStyle(
-          color: color,
-          fontSize: fontSize,
-          fontWeight: FontWeight.bold,
-        );
-      case FontStyleType.italic:
-        return TextStyle(
-          color: color,
-          fontSize: fontSize,
-          fontStyle: FontStyle.italic,
-        );
-      case FontStyleType.boldItalic:
-        return TextStyle(
-          color: color,
-          fontSize: fontSize,
-          fontWeight: FontWeight.bold,
-          fontStyle: FontStyle.italic,
-        );
-      case FontStyleType.monospace:
-        return TextStyle(
-          color: color,
-          fontSize: fontSize,
-          fontFamily: 'monospace',
-        );
-      case FontStyleType.cursive:
-        return TextStyle(
-          color: color,
-          fontSize: fontSize,
-          fontFamily: 'cursive',
-        );
-      case FontStyleType.normal:
-      default:
-        return TextStyle(color: color, fontSize: fontSize);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
     final errorColor = theme.colorScheme.error;
     final onErrorColor = theme.colorScheme.onError;
+
+    // Check if there's content to clear - for the clear button
+    bool hasContent =
+        _lines.isNotEmpty ||
+        _images.isNotEmpty ||
+        (_backgroundColor != null &&
+            _backgroundColor != theme.scaffoldBackgroundColor);
 
     return WillPopScope(
       onWillPop: _onWillPop,
@@ -1598,7 +1477,10 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                       context: context,
                       builder:
                           (context) => AlertDialog(
-                            title: const Text('Save Drawing?'),
+                            title: const Text(
+                              'Save Drawing',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                             content: const Text(
                               'Do you want to save your drawing now?',
                             ),
@@ -1666,72 +1548,8 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                         onScaleUpdate: _onScaleUpdate,
                         onScaleEnd: _onScaleEnd,
                         onTapDown: (details) async {
-                          // Instagram-like text tool logic
-                          if (_isTextToolActive) {
-                            // If already editing, do nothing
-                            if (_editingTextIndex != null) return;
-                            // Add new text at tap position and enter edit mode
-                            setState(() {
-                              final newText = DrawnText(
-                                text: '',
-                                position: details.localPosition,
-                                style: _getTextStyle(
-                                  _selectedColor,
-                                  _editingFontSize,
-                                  _editingFontStyleType,
-                                ),
-                                fontSize: _editingFontSize,
-                                color: _selectedColor,
-                                fontStyleType: _editingFontStyleType,
-                              );
-                              _texts.add(newText);
-                              _editingTextIndex = _texts.length - 1;
-                              _editingTextController = TextEditingController(
-                                text: '',
-                              );
-                              _editingFontStyleType = FontStyleType.normal;
-                              _editingFontSize = 32.0;
-                              _selectedTextIndex = null;
-                            });
-                            return;
-                          }
-                          // Text selection logic
-                          for (int i = _texts.length - 1; i >= 0; i--) {
-                            final dtext = _texts[i];
-                            final textSpan = TextSpan(
-                              text: dtext.text,
-                              style: dtext.style,
-                            );
-                            final textPainter = TextPainter(
-                              text: textSpan,
-                              textAlign: TextAlign.left,
-                              textDirection: TextDirection.ltr,
-                            );
-                            textPainter.layout();
-                            final rect = Rect.fromLTWH(
-                              dtext.position.dx,
-                              dtext.position.dy,
-                              textPainter.width,
-                              textPainter.height,
-                            );
-                            if (rect.contains(details.localPosition)) {
-                              setState(() {
-                                _selectedTextIndex = i;
-                                _editingTextIndex = null;
-                              });
-                              return;
-                            }
-                          }
-                          setState(() {
-                            _selectedTextIndex = null;
-                            _editingTextIndex = null;
-                          });
                           if (_isEyedropperActive) {
                             await _pickColorFromCanvas(details.localPosition);
-                            return;
-                          }
-                          if (_currentShapeType != ShapeType.none ||
-                              _isDrawingShape) {
                             return;
                           }
                           for (int i = _images.length - 1; i >= 0; i--) {
@@ -1779,28 +1597,14 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                             primaryColor: primaryColor,
                             errorColor: errorColor,
                             onErrorColor: onErrorColor,
-                            shapes: _shapes,
-                            currentShapeType: _currentShapeType,
-                            shapeStartPoint: _shapeStartPoint,
-                            currentShapePoint: _currentShapePoint,
-                            isDrawingShape: _isDrawingShape,
-                            selectedColor: _selectedColor,
-                            strokeWidth: _strokeWidth,
-                            texts: _texts,
                           ),
                           child: Container(),
                         ),
                       ),
-                      if (_editingTextIndex != null)
-                        _buildInPlaceTextEditor(context, _editingTextIndex!),
-                      if (_selectedTextIndex != null &&
-                          _editingTextIndex == null)
-                        _buildTextEditorOverlay(context, _selectedTextIndex!),
                       if (_isErasing && _eraserPointerPosition != null)
                         Builder(
                           builder: (context) {
                             double scale = 1.0;
-                            // If adjusting an image, use its scale for eraser circle
                             if (_isAdjustingImage &&
                                 _activeImageIndex != null &&
                                 _activeImageIndex! < _images.length) {
@@ -1849,15 +1653,37 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                       Tooltip(
                         message: 'Undo',
                         child: IconButton(
-                          icon: Icon(Icons.undo, color: _iconColor),
-                          onPressed: _undo,
+                          icon: Icon(
+                            Icons.undo,
+                            color:
+                                _activeTool == ActiveTool.undo
+                                    ? primaryColor
+                                    : _iconColor,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _activeTool = ActiveTool.undo;
+                            });
+                            _undo();
+                          },
                         ),
                       ),
                       Tooltip(
                         message: 'Redo',
                         child: IconButton(
-                          icon: Icon(Icons.redo, color: _iconColor),
-                          onPressed: _redo,
+                          icon: Icon(
+                            Icons.redo,
+                            color:
+                                _activeTool == ActiveTool.redo
+                                    ? primaryColor
+                                    : _iconColor,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _activeTool = ActiveTool.redo;
+                            });
+                            _redo();
+                          },
                         ),
                       ),
                       Tooltip(
@@ -1866,20 +1692,15 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                           icon: Icon(
                             Icons.brush,
                             color:
-                                !_isErasing &&
-                                        !_isDrawingShape &&
-                                        !_isEyedropperActive &&
-                                        _currentShapeType == ShapeType.none &&
-                                        !_isTextToolActive
-                                    ? _iconColor
-                                    : Colors.grey,
+                                _activeTool == ActiveTool.brush
+                                    ? primaryColor
+                                    : _iconColor,
                           ),
                           onPressed: () {
                             setState(() {
+                              _activeTool = ActiveTool.brush;
                               _isErasing = false;
                               _isEyedropperActive = false;
-                              _isDrawingShape = false;
-                              _currentShapeType = ShapeType.none;
                               _isAdjustingImage = false;
                             });
                             _showBrushSlider();
@@ -1889,10 +1710,19 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                       Tooltip(
                         message: 'Pick Color',
                         child: IconButton(
-                          icon: Icon(Icons.color_lens, color: _iconColor),
+                          icon: Icon(
+                            Icons.color_lens,
+                            color:
+                                _activeTool == ActiveTool.colorPicker
+                                    ? primaryColor
+                                    : _iconColor,
+                          ),
                           onPressed: () {
                             setState(() {
+                              _activeTool = ActiveTool.colorPicker;
                               _isEyedropperActive = false;
+                              _isErasing = false;
+                              _isAdjustingImage = false;
                             });
                             _showColorPicker();
                           },
@@ -1904,16 +1734,15 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                           icon: Icon(
                             Icons.cleaning_services,
                             color:
-                                _isErasing && !_isEyedropperActive
-                                    ? _iconColor
-                                    : Colors.grey,
+                                _activeTool == ActiveTool.eraser
+                                    ? primaryColor
+                                    : _iconColor,
                           ),
                           onPressed: () {
                             setState(() {
+                              _activeTool = ActiveTool.eraser;
                               _isErasing = true;
                               _isEyedropperActive = false;
-                              _isDrawingShape = false;
-                              _currentShapeType = ShapeType.none;
                               _isAdjustingImage = false;
                             });
                             _showEraserSlider();
@@ -1926,10 +1755,13 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                           icon: Icon(
                             Icons.colorize,
                             color:
-                                _isEyedropperActive ? primaryColor : _iconColor,
+                                _activeTool == ActiveTool.eyedropper
+                                    ? primaryColor
+                                    : _iconColor,
                           ),
                           onPressed: () {
                             setState(() {
+                              _activeTool = ActiveTool.eyedropper;
                               _isEyedropperActive = !_isEyedropperActive;
                               if (_isEyedropperActive) {
                                 _isErasing = false;
@@ -1939,22 +1771,48 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                           },
                         ),
                       ),
-
                       Tooltip(
                         message: 'Background',
                         child: IconButton(
                           icon: Icon(
                             Icons.format_color_fill,
-                            color: _iconColor,
+                            color:
+                                _activeTool == ActiveTool.background
+                                    ? primaryColor
+                                    : _iconColor,
                           ),
-                          onPressed: _showBackgroundPicker,
+                          onPressed: () {
+                            setState(() {
+                              _activeTool = ActiveTool.background;
+                              _isEyedropperActive = false;
+                              _isErasing = false;
+                              _isAdjustingImage = false;
+                            });
+                            _showBackgroundPicker();
+                          },
                         ),
                       ),
                       Tooltip(
                         message: 'Clear',
                         child: IconButton(
-                          icon: Icon(Icons.clear, color: _iconColor),
-                          onPressed: _clearCanvas,
+                          icon: Icon(
+                            Icons.clear,
+                            color:
+                                _activeTool == ActiveTool.clear && hasContent
+                                    ? primaryColor
+                                    : hasContent
+                                    ? _iconColor
+                                    : theme.disabledColor,
+                          ),
+                          onPressed:
+                              hasContent
+                                  ? () {
+                                    setState(() {
+                                      _activeTool = ActiveTool.clear;
+                                    });
+                                    _clearCanvas();
+                                  }
+                                  : null, // Disable button when no content
                         ),
                       ),
                       if (_images.isNotEmpty)
@@ -1966,12 +1824,21 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                           child: IconButton(
                             icon: Icon(
                               _isAdjustingImage ? Icons.check : Icons.edit,
-                              color: _iconColor,
+                              color:
+                                  _activeTool == ActiveTool.image
+                                      ? primaryColor
+                                      : _iconColor,
                             ),
-                            onPressed:
-                                () => setState(
-                                  () => _isAdjustingImage = !_isAdjustingImage,
-                                ),
+                            onPressed: () {
+                              setState(() {
+                                _activeTool = ActiveTool.image;
+                                _isAdjustingImage = !_isAdjustingImage;
+                                if (_isAdjustingImage) {
+                                  _isErasing = false;
+                                  _isEyedropperActive = false;
+                                }
+                              });
+                            },
                           ),
                         ),
                     ],
@@ -1980,197 +1847,6 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  // In-place text editor overlay for Instagram-like editing
-  Widget _buildInPlaceTextEditor(BuildContext context, int index) {
-    final dtext = _texts[index];
-    final textField = Material(
-      color: Colors.transparent,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.8,
-            ),
-            child: TextField(
-              controller: _editingTextController,
-              autofocus: true,
-              style: _getTextStyle(
-                _selectedColor,
-                _editingFontSize,
-                _editingFontStyleType,
-              ),
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
-                hintText: 'Type something...',
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _texts[index] = dtext.copyWith(
-                    text: value,
-                    style: _getTextStyle(
-                      _selectedColor,
-                      _editingFontSize,
-                      _editingFontStyleType,
-                    ),
-                    fontSize: _editingFontSize,
-                    color: _selectedColor,
-                    fontStyleType: _editingFontStyleType,
-                  );
-                  _saveState();
-                });
-              },
-              onEditingComplete: () {
-                setState(() {
-                  _editingTextIndex = null;
-                  _editingTextController?.dispose();
-                  _editingTextController = null;
-                  _saveState();
-                });
-              },
-              textInputAction: TextInputAction.done,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8.0,
-            children:
-                FontStyleType.values.map((type) {
-                  return ChoiceChip(
-                    label: Text(type.toString().split('.').last),
-                    selected: _editingFontStyleType == type,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _editingFontStyleType = type;
-                          _texts[index] = dtext.copyWith(
-                            style: _getTextStyle(
-                              _selectedColor,
-                              _editingFontSize,
-                              _editingFontStyleType,
-                            ),
-                            fontStyleType: _editingFontStyleType,
-                          );
-                          _saveState();
-                        });
-                      }
-                    },
-                  );
-                }).toList(),
-          ),
-        ],
-      ),
-    );
-    return Positioned(
-      left: dtext.position.dx,
-      top: dtext.position.dy,
-      child: textField,
-    );
-  }
-
-  // Overlay for selected text: move, resize, delete
-  Widget _buildTextEditorOverlay(BuildContext context, int index) {
-    final dtext = _texts[index];
-    final textSpan = TextSpan(text: dtext.text, style: dtext.style);
-    final textPainter = TextPainter(
-      text: textSpan,
-      textAlign: TextAlign.left,
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    return Positioned(
-      left: dtext.position.dx,
-      top: dtext.position.dy,
-      child: GestureDetector(
-        onPanStart: (details) {
-          _dragStartOffset = details.localPosition;
-          _textStartPosition = dtext.position;
-        },
-        onPanUpdate: (details) {
-          setState(() {
-            _texts[index] = dtext.copyWith(
-              position:
-                  _textStartPosition! +
-                  (details.localPosition - _dragStartOffset!),
-            );
-            _saveState();
-          });
-        },
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              width: textPainter.width,
-              height: textPainter.height,
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.blue, width: 1),
-              ),
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Text(
-                        dtext.text,
-                        style: dtext.style,
-                        maxLines: null,
-                        overflow: TextOverflow.visible,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              right: -20,
-              top: -20,
-              child: IconButton(
-                icon: Icon(Icons.close, color: Colors.red),
-                onPressed: () {
-                  setState(() {
-                    _texts.removeAt(index);
-                    _selectedTextIndex = null;
-                    _saveState();
-                  });
-                },
-              ),
-            ),
-            Positioned(
-              left: 0,
-              bottom: -40,
-              child: Row(
-                children: [
-                  Text('Size:'),
-                  Slider(
-                    min: 8,
-                    max: 120,
-                    value: dtext.fontSize,
-                    onChanged: (value) {
-                      setState(() {
-                        _texts[index] = dtext.copyWith(
-                          fontSize: value,
-                          style: _getTextStyle(
-                            dtext.color,
-                            value,
-                            dtext.fontStyleType,
-                          ),
-                        );
-                        _saveState();
-                      });
-                    },
-                    divisions: 56,
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -2188,18 +1864,6 @@ class DrawingPainter extends CustomPainter {
   final Color errorColor;
   final Color onErrorColor;
 
-  // Add these for shapes
-  final List<DrawnShape> shapes;
-  final ShapeType currentShapeType;
-  final Offset? shapeStartPoint;
-  final Offset? currentShapePoint;
-  final bool isDrawingShape;
-  final Color selectedColor; // For preview
-  final double strokeWidth; // For preview
-
-  // Add for Text
-  final List<DrawnText> texts; // <-- Add this
-
   DrawingPainter(
     this.lines,
     this.currentLine,
@@ -2210,15 +1874,6 @@ class DrawingPainter extends CustomPainter {
     required this.primaryColor,
     required this.errorColor,
     required this.onErrorColor,
-    // Add these to constructor
-    required this.shapes,
-    required this.currentShapeType,
-    this.shapeStartPoint,
-    this.currentShapePoint,
-    required this.isDrawingShape,
-    required this.selectedColor,
-    required this.strokeWidth,
-    required this.texts, // <-- Add this
   });
 
   @override
@@ -2250,7 +1905,6 @@ class DrawingPainter extends CustomPainter {
       try {
         canvas.drawImageRect(image.image, src, dst, paint);
       } catch (e) {
-        // If the image is disposed or invalid, skip drawing it
         debugPrint('Error drawing image: $e');
       }
 
@@ -2288,80 +1942,7 @@ class DrawingPainter extends CustomPainter {
         );
       }
 
-      // Draw completed shapes
-      for (var shape in shapes) {
-        final shapePaint =
-            Paint()
-              ..color = shape.color
-              ..strokeWidth = shape.strokeWidth
-              ..style = PaintingStyle.stroke; // For now, all shapes are stroke
-
-        _drawShape(
-          canvas,
-          shape.type,
-          shape.startPoint,
-          shape.endPoint,
-          shapePaint,
-        );
-      }
-
-      // Draw current in-progress shape (preview)
-      if (isDrawingShape &&
-          shapeStartPoint != null &&
-          currentShapePoint != null &&
-          currentShapeType != ShapeType.none) {
-        final previewPaint =
-            Paint()
-              ..color =
-                  selectedColor // Use current selected color for preview
-              ..strokeWidth =
-                  strokeWidth // Use current stroke width
-              ..style = PaintingStyle.stroke
-              ..strokeCap = StrokeCap.round;
-        _drawShape(
-          canvas,
-          currentShapeType,
-          shapeStartPoint!,
-          currentShapePoint!,
-          previewPaint,
-        );
-      }
-
       canvas.restore();
-    }
-
-    // Draw Texts
-    for (final dtext in texts) {
-      final textSpan = TextSpan(
-        text: dtext.text,
-        style: TextStyle(
-          color: dtext.color,
-          fontSize: dtext.fontSize,
-          fontWeight:
-              dtext.fontStyleType == FontStyleType.bold ||
-                      dtext.fontStyleType == FontStyleType.boldItalic
-                  ? FontWeight.bold
-                  : FontWeight.normal,
-          fontStyle:
-              dtext.fontStyleType == FontStyleType.italic ||
-                      dtext.fontStyleType == FontStyleType.boldItalic
-                  ? FontStyle.italic
-                  : FontStyle.normal,
-          fontFamily:
-              dtext.fontStyleType == FontStyleType.monospace
-                  ? 'monospace'
-                  : dtext.fontStyleType == FontStyleType.cursive
-                  ? 'cursive'
-                  : null,
-        ),
-      );
-      final textPainter = TextPainter(
-        text: textSpan,
-        textAlign: TextAlign.left,
-        textDirection: TextDirection.ltr,
-      );
-      textPainter.layout(minWidth: 0, maxWidth: size.width - dtext.position.dx);
-      textPainter.paint(canvas, dtext.position);
     }
 
     for (var line in [...lines, if (currentLine != null) currentLine!]) {
@@ -2426,9 +2007,7 @@ class DrawingPainter extends CustomPainter {
           paint.strokeCap = StrokeCap.round;
           const int density = 5;
           final double spreadFactor = line.width * 0.5;
-          final random = math.Random(
-            line.seed ?? 0,
-          ); // Use a fixed seed for static effect
+          final random = math.Random(line.seed ?? 0);
           for (int i = 0; i < line.path.length; i++) {
             for (int j = 0; j < density; j++) {
               final double offsetX =
@@ -2460,82 +2039,8 @@ class DrawingPainter extends CustomPainter {
     canvas.restore();
   }
 
-  // Helper method to draw different shapes
-  void _drawShape(
-    Canvas canvas,
-    ShapeType type,
-    Offset p1,
-    Offset p2,
-    Paint paint,
-  ) {
-    switch (type) {
-      case ShapeType.rectangle:
-        canvas.drawRect(Rect.fromPoints(p1, p2), paint);
-        break;
-      case ShapeType.circle:
-        final center = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
-        final radius = (p2 - p1).distance / 2;
-        if (radius > 0) {
-          canvas.drawCircle(center, radius.abs(), paint);
-        }
-        break;
-      case ShapeType.line:
-        canvas.drawLine(p1, p2, paint);
-        break;
-      case ShapeType.none:
-        break;
-    }
-  }
-
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-
-class DrawnLine {
-  List<Offset> path;
-  Color color;
-  double width;
-  BrushType brushType;
-  int? seed;
-
-  DrawnLine(this.path, this.color, this.width, this.brushType, {this.seed});
-
-  Map<String, dynamic> toJson() => {
-    'path': path.map((o) => {'dx': o.dx, 'dy': o.dy}).toList(),
-    'color': color.value,
-    'width': width,
-    'brushType': brushType.index,
-    'seed': seed,
-  };
-
-  static DrawnLine fromJson(Map<String, dynamic> json) => DrawnLine(
-    (json['path'] as List)
-        .map(
-          (p) =>
-              Offset((p['dx'] as num).toDouble(), (p['dy'] as num).toDouble()),
-        )
-        .toList(),
-    Color(json['color']),
-    (json['width'] as num).toDouble(),
-    BrushType.values[json['brushType']],
-    seed: json['seed'],
-  );
-
-  DrawnLine copyWith({
-    List<Offset>? path,
-    Color? color,
-    double? width,
-    BrushType? brushType,
-    int? seed,
-  }) {
-    return DrawnLine(
-      path ?? this.path,
-      color ?? this.color,
-      width ?? this.width,
-      brushType ?? this.brushType,
-      seed: seed ?? this.seed,
-    );
-  }
 }
 
 class ImageData {
@@ -2550,31 +2055,23 @@ class CanvasState {
   final List<DrawnLine> lines;
   final Color backgroundColor;
   final List<ImageData> images;
-  final List<DrawnShape> shapes; // <-- Add this
-  final List<DrawnText> texts; // <-- Add this
 
   CanvasState({
     required this.lines,
     required this.backgroundColor,
     required this.images,
-    required this.shapes, // <-- Add this
-    required this.texts, // <-- Add this
   });
 }
 
 class DrawingState {
   final List<DrawnLine> lines;
-  final List<DrawnShape> shapes;
-  final List<DrawnText> texts;
   final Color backgroundColor;
-  final List<Map<String, dynamic>> images; // Store image data as base64
+  final List<Map<String, dynamic>> images;
   final String? title;
   final DateTime timestamp;
 
   DrawingState({
     required this.lines,
-    required this.shapes,
-    required this.texts,
     required this.backgroundColor,
     required this.images,
     this.title,
@@ -2583,8 +2080,6 @@ class DrawingState {
 
   Map<String, dynamic> toJson() => {
     'lines': lines.map((l) => l.toJson()).toList(),
-    'shapes': shapes.map((s) => s.toJson()).toList(),
-    'texts': texts.map((t) => t.toJson()).toList(),
     'backgroundColor': backgroundColor.value,
     'images': images,
     'title': title,
@@ -2614,9 +2109,6 @@ class DrawingState {
 
     return DrawingState(
       lines: (json['lines'] as List).map((l) => DrawnLine.fromJson(l)).toList(),
-      shapes:
-          (json['shapes'] as List).map((s) => DrawnShape.fromJson(s)).toList(),
-      texts: (json['texts'] as List).map((t) => DrawnText.fromJson(t)).toList(),
       backgroundColor: Color(json['backgroundColor']),
       images: imageData,
       title: json['title'],

@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pencraftpro/drawing/DrawingPage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:pencraftpro/dashboard/DrawingDashboard.dart';
 
 class SavedDrawingsPage extends StatefulWidget {
   const SavedDrawingsPage({super.key});
@@ -40,7 +41,10 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Remove Drawing?'),
+            title: const Text(
+              'Remove Drawing',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             content: const Text(
               'This drawing will be permanently removed. Are you sure?',
             ),
@@ -123,7 +127,10 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Rename Drawing', style: TextStyle(fontSize: 14)),
+            title: const Text(
+              'Rename Drawing',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
             content: TextField(
               controller: controller,
               autofocus: true,
@@ -144,7 +151,7 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('Save', style: TextStyle(fontSize: 14)),
+                child: const Text('Confirm', style: TextStyle(fontSize: 14)),
               ),
             ],
           ),
@@ -241,211 +248,275 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Saved Drawings'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child:
-            _savedDrawings.isEmpty
-                ? const Center(
-                  child: Text(
-                    'No saved drawings yet.',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                )
-                : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 16.0),
-                      child: Text(
-                        'Recent Drawings',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: null,
+    return WillPopScope(
+      onWillPop: () async => false,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Saved Drawings'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          foregroundColor: Colors.white,
+          automaticallyImplyLeading: false,
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child:
+              _savedDrawings.isEmpty
+                  ? const Center(
+                    child: Text(
+                      'No saved drawings yet.',
+                      style: TextStyle(fontSize: 18, color: Colors.grey),
+                    ),
+                  )
+                  : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 16.0),
+                        child: Text(
+                          'Recent Drawings',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: null,
+                          ),
                         ),
                       ),
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: _savedDrawings.length,
-                        itemBuilder: (context, index) {
-                          final drawingData = _savedDrawings[index].split('|');
-                          // Robust parsing with defaults
-                          final fileName =
-                              drawingData.isNotEmpty ? drawingData[0] : '';
-                          final dateTime =
-                              drawingData.length > 1
-                                  ? DateTime.tryParse(drawingData[1]) ??
-                                      DateTime.now()
-                                  : DateTime.now();
-                          final title =
-                              drawingData.length > 2
-                                  ? drawingData[2].isNotEmpty
-                                      ? drawingData[2]
-                                      : 'Drawing ${index + 1}'
-                                  : 'Drawing ${index + 1}';
-                          final offsetX =
-                              drawingData.length > 3
-                                  ? double.tryParse(drawingData[3]) ?? 0.0
-                                  : 0.0;
-                          final offsetY =
-                              drawingData.length > 4
-                                  ? double.tryParse(drawingData[4]) ?? 0.0
-                                  : 0.0;
-                          final scale =
-                              drawingData.length > 5
-                                  ? double.tryParse(drawingData[5]) ?? 1.0
-                                  : 1.0;
-
-                          // Debug print to verify parameters
-                          debugPrint(
-                            'Opening drawing: title=$title, fileName=$fileName, '
-                            'offsetX=$offsetX, offsetY=$offsetY, scale=$scale',
-                          );
-
-                          return FutureBuilder<String>(
-                            future: _getImagePath(fileName),
-                            builder: (context, snapshot) {
-                              final path = snapshot.data;
-                              final exists =
-                                  path != null && File(path).existsSync();
-                              return InkWell(
-                                onTap: () {
-                                  if (exists) {
-                                    _loadDrawing(index);
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Drawing file "$title" not found.',
-                                          style: TextStyle(
-                                            color:
-                                                Theme.of(
-                                                  context,
-                                                ).colorScheme.onErrorContainer,
-                                          ),
-                                        ),
-                                        backgroundColor:
-                                            Theme.of(
-                                              context,
-                                            ).colorScheme.errorContainer,
-                                        behavior: SnackBarBehavior.floating,
-                                        margin: const EdgeInsets.all(8),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.only(bottom: 16.0),
-                                  child: Card(
-                                    elevation: 4,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                      Expanded(
+                        child: RefreshIndicator(
+                          onRefresh: () async {
+                            await _loadSavedDrawings();
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Drawings refreshed successfully.',
+                                    style: TextStyle(
+                                      color:
+                                          Theme.of(
+                                            context,
+                                          ).colorScheme.onPrimary,
                                     ),
-                                    child: Container(
-                                      height: 150,
-                                      padding: const EdgeInsets.all(16.0),
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            width: 100,
-                                            height: 100,
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              color: Colors.grey[200],
-                                            ),
-                                            child:
-                                                exists
-                                                    ? ClipRRect(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8,
-                                                          ),
-                                                      child: Image.file(
-                                                        File(path),
-                                                        fit: BoxFit.cover,
-                                                      ),
-                                                    )
-                                                    : const Icon(
-                                                      Icons.image,
-                                                      size: 50,
-                                                      color: Colors.grey,
-                                                    ),
-                                          ),
-                                          const SizedBox(width: 16),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                Text(
-                                                  title,
-                                                  style: TextStyle(
-                                                    fontSize:
-                                                        title ==
-                                                                'Edit Title Name'
-                                                            ? 14
-                                                            : 14,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  'Created on: ${dateTime.toLocal().toString().split('.')[0]}',
-                                                  style: TextStyle(
-                                                    fontSize: 14,
-                                                    color: Colors.grey[600],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              IconButton(
-                                                icon: const Icon(Icons.edit),
-                                                onPressed:
-                                                    () => _renameDrawing(index),
-                                              ),
-                                              IconButton(
-                                                icon: const Icon(Icons.delete),
-                                                color: Colors.red,
-                                                onPressed:
-                                                    () => _confirmDelete(index),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
+                                  ),
+                                  backgroundColor:
+                                      Theme.of(context).colorScheme.primary,
+                                  behavior: SnackBarBehavior.floating,
+                                  margin: const EdgeInsets.all(8),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
                                 ),
                               );
+                            }
+                          },
+                          child: ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            itemCount: _savedDrawings.length,
+                            itemBuilder: (context, index) {
+                              final drawingData = _savedDrawings[index].split(
+                                '|',
+                              );
+                              // Robust parsing with defaults
+                              final fileName =
+                                  drawingData.isNotEmpty ? drawingData[0] : '';
+                              final dateTime =
+                                  drawingData.length > 1
+                                      ? DateTime.tryParse(drawingData[1]) ??
+                                          DateTime.now()
+                                      : DateTime.now();
+                              final title =
+                                  drawingData.length > 2
+                                      ? drawingData[2].isNotEmpty
+                                          ? drawingData[2]
+                                          : 'Drawing ${index + 1}'
+                                      : 'Drawing ${index + 1}';
+                              final offsetX =
+                                  drawingData.length > 3
+                                      ? double.tryParse(drawingData[3]) ?? 0.0
+                                      : 0.0;
+                              final offsetY =
+                                  drawingData.length > 4
+                                      ? double.tryParse(drawingData[4]) ?? 0.0
+                                      : 0.0;
+                              final scale =
+                                  drawingData.length > 5
+                                      ? double.tryParse(drawingData[5]) ?? 1.0
+                                      : 1.0;
+
+                              // Debug print to verify parameters
+                              debugPrint(
+                                'Opening drawing: title=$title, fileName=$fileName, '
+                                'offsetX=$offsetX, offsetY=$offsetY, scale=$scale',
+                              );
+
+                              return FutureBuilder<String>(
+                                future: _getImagePath(fileName),
+                                builder: (context, snapshot) {
+                                  final path = snapshot.data;
+                                  final exists =
+                                      path != null && File(path).existsSync();
+                                  return InkWell(
+                                    onTap: () {
+                                      if (exists) {
+                                        _loadDrawing(index);
+                                      } else {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Drawing file "$title" not found.',
+                                              style: TextStyle(
+                                                color:
+                                                    Theme.of(context)
+                                                        .colorScheme
+                                                        .onErrorContainer,
+                                              ),
+                                            ),
+                                            backgroundColor:
+                                                Theme.of(
+                                                  context,
+                                                ).colorScheme.errorContainer,
+                                            behavior: SnackBarBehavior.floating,
+                                            margin: const EdgeInsets.all(8),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 16.0,
+                                      ),
+                                      child: Card(
+                                        elevation: 4,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Container(
+                                          height: 150,
+                                          padding: const EdgeInsets.all(16.0),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 100,
+                                                height: 100,
+                                                decoration: BoxDecoration(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  color: Colors.grey[200],
+                                                ),
+                                                child:
+                                                    exists
+                                                        ? ClipRRect(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                8,
+                                                              ),
+                                                          child: Image.file(
+                                                            File(path),
+                                                            fit: BoxFit.cover,
+                                                          ),
+                                                        )
+                                                        : const Icon(
+                                                          Icons.image,
+                                                          size: 50,
+                                                          color: Colors.grey,
+                                                        ),
+                                              ),
+                                              const SizedBox(width: 16),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    Text(
+                                                      title,
+                                                      style: TextStyle(
+                                                        fontSize:
+                                                            title ==
+                                                                    'Edit Title Name'
+                                                                ? 14
+                                                                : 14,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                    const SizedBox(height: 8),
+                                                    Text(
+                                                      'Created on: ${dateTime.toLocal().toString().split('.')[0]}',
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        color: Colors.grey[600],
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                      Icons.edit,
+                                                    ),
+                                                    onPressed:
+                                                        () => _renameDrawing(
+                                                          index,
+                                                        ),
+                                                  ),
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                      Icons.delete,
+                                                    ),
+                                                    color: Colors.red,
+                                                    onPressed:
+                                                        () => _confirmDelete(
+                                                          index,
+                                                        ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              );
                             },
-                          );
-                        },
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+        ),
+        bottomNavigationBar: BottomAppBar(
+          color: Theme.of(context).colorScheme.error,
+          shape: const CircularNotchedRectangle(),
+          notchMargin: 10.0,
+          child: IconButton(
+            icon: Icon(
+              Icons.home,
+              color: Theme.of(context).colorScheme.onError,
+            ),
+            iconSize: 32,
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            tooltip: 'Go to Home',
+          ),
+        ),
       ),
     );
   }

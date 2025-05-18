@@ -136,13 +136,13 @@ class _ViewLabelPageState extends State<ViewLabelPage> {
           children: [
             Text(
               widget.title.isNotEmpty ? widget.title : 'Untitled',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontSize: 24,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 8),
-            if (widget.reminder != null)
+            if (widget.reminder != null) ...[
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Icon(
@@ -166,8 +166,9 @@ class _ViewLabelPageState extends State<ViewLabelPage> {
                   ),
                 ],
               ),
-            const SizedBox(height: 8),
-            if (_folderName != null)
+            ],
+            if (_folderName != null) ...[
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Icon(
@@ -188,8 +189,9 @@ class _ViewLabelPageState extends State<ViewLabelPage> {
                   ),
                 ],
               ),
-            const SizedBox(height: 12),
-            if (widget.labels.isNotEmpty)
+            ],
+            if (widget.labels.isNotEmpty) ...[
+              const SizedBox(height: 12),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
@@ -230,7 +232,11 @@ class _ViewLabelPageState extends State<ViewLabelPage> {
                       );
                     }).toList(),
               ),
-            const SizedBox(height: 16),
+            ],
+            if (widget.contentJson.isNotEmpty ||
+                widget.voiceNote != null ||
+                widget.imagePaths.isNotEmpty)
+              const SizedBox(height: 16),
             ...widget.contentJson.map((item) {
               final checklistItems =
                   item['checklistItems'] as List<dynamic>? ?? [];

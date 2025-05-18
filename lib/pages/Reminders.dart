@@ -192,14 +192,10 @@ class _RemindersState extends State<Reminders> {
           _drawerItem(Icons.alarm, 'Reminders', '/reminders', selected: true),
           Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
           _drawerItem(Icons.label, 'Labels', '/labels'),
-          Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
           _drawerItem(Icons.folder, 'Folders', '/folders'),
-          Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
           _drawerItem(Icons.archive, 'Archive', '/archive'),
-          Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
           _drawerItem(Icons.delete, 'Recycle Bin', '/deleted'),
           _drawerItem(Icons.settings, 'Account Settings', '/accountsettings'),
-          Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
           ListTile(
             leading: Icon(
               Icons.logout,

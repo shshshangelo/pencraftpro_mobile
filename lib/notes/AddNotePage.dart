@@ -168,18 +168,7 @@ class _AddNotePageState extends State<AddNotePage> {
     _labels = widget.labels?.toList() ?? [];
     _isArchived = widget.isArchived;
 
-    // Initialize element order with existing elements in reverse order
-    // First add images (they should be at the bottom)
-    if (widget.imagePaths != null) {
-      for (var path in widget.imagePaths!) {
-        _elementOrder.add({'type': 'image', 'path': path});
-      }
-    }
-    // Then add voice note (it should be above images)
-    if (widget.voiceNote != null) {
-      _elementOrder.insert(0, {'type': 'voice', 'path': widget.voiceNote});
-    }
-    // Finally add checklist items (they should be at the top)
+    // Initialize element order with existing elements in the correct order
     if (widget.contentJson != null) {
       for (var item in widget.contentJson!) {
         if (item['checklistItems'] != null) {
@@ -187,9 +176,19 @@ class _AddNotePageState extends State<AddNotePage> {
             item['checklistItems'],
           );
           for (var i = 0; i < checklistItems.length; i++) {
-            _elementOrder.insert(0, {'type': 'checklist', 'index': i});
+            _elementOrder.add({'type': 'checklist', 'index': i});
           }
         }
+      }
+    }
+    // Add voice note
+    if (widget.voiceNote != null) {
+      _elementOrder.add({'type': 'voice', 'path': widget.voiceNote});
+    }
+    // Add images
+    if (widget.imagePaths != null) {
+      for (var path in widget.imagePaths!) {
+        _elementOrder.add({'type': 'image', 'path': path});
       }
     }
 
@@ -505,6 +504,24 @@ class _AddNotePageState extends State<AddNotePage> {
               )
               .toList();
 
+      // Create a list to store the element order
+      final List<Map<String, dynamic>> elementOrder = [];
+
+      // Add checklist items first
+      for (var i = 0; i < filteredChecklistItems.length; i++) {
+        elementOrder.add({'type': 'checklist', 'index': i});
+      }
+
+      // Add voice note if exists
+      if (_voiceNotePath != null) {
+        elementOrder.add({'type': 'voice', 'path': _voiceNotePath});
+      }
+
+      // Add images last
+      for (var path in _imagePaths) {
+        elementOrder.add({'type': 'image', 'path': path});
+      }
+
       final noteData = {
         'id': noteId,
         'title': _titleController.text.trim(),
@@ -544,8 +561,8 @@ class _AddNotePageState extends State<AddNotePage> {
         'createdAt':
             existingNote?['createdAt'] ?? DateTime.now().toIso8601String(),
         'updatedAt': DateTime.now().toIso8601String(),
-        'lastModifiedBy':
-            currentUser.uid, // Add this field to track who made the last change
+        'lastModifiedBy': currentUser.uid,
+        'elementOrder': elementOrder, // Add the element order to the note data
       };
 
       // Update local storage
@@ -701,8 +718,8 @@ class _AddNotePageState extends State<AddNotePage> {
       final index = _checklistItems.length;
       _checklistItems.add({'text': '', 'checked': false});
       _checklistControllers[index] = TextEditingController();
-      // Add to element order at the beginning
-      _elementOrder.insert(0, {'type': 'checklist', 'index': index});
+      // Add to element order at the end
+      _elementOrder.add({'type': 'checklist', 'index': index});
     });
   }
 
@@ -834,22 +851,6 @@ class _AddNotePageState extends State<AddNotePage> {
           _reminder = reminderDateTime;
         });
         await _scheduleNotification(reminderDateTime);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Reminder has been successfully set.',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-              ),
-            ),
-            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(8),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        );
       }
     }
   }
@@ -962,7 +963,7 @@ class _AddNotePageState extends State<AddNotePage> {
         playSound: true,
         category: AndroidNotificationCategory.reminder,
         visibility: NotificationVisibility.public,
-        icon: '@mipmap/ic_launcher',
+        icon: '@mipmap/ic_launcher_foreground',
         largeIcon: DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
         styleInformation: BigTextStyleInformation(''),
         fullScreenIntent: true,
@@ -987,10 +988,10 @@ class _AddNotePageState extends State<AddNotePage> {
       Future.delayed(delay, () async {
         await _notificationsPlugin.show(
           notificationId,
-          '📝 Reminder: $formattedDate, $formattedTime',
+          '⏰ Reminder • $formattedDate $formattedTime',
           _titleController.text.isNotEmpty
-              ? _titleController.text
-              : 'Untitled Note',
+              ? '📝 ${_titleController.text}'
+              : '📝 Untitled Note',
           notificationDetails,
         );
       });
@@ -1003,7 +1004,7 @@ class _AddNotePageState extends State<AddNotePage> {
       notificationIds.add(notificationId.toString());
       await prefs.setStringList('notification_ids', notificationIds);
 
-      // Show confirmation to user
+      // Show confirmation for successful reminder
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -1146,8 +1147,8 @@ class _AddNotePageState extends State<AddNotePage> {
     if (image != null) {
       setState(() {
         _imagePaths.add(image.path);
-        // Add to element order at the beginning
-        _elementOrder.insert(0, {'type': 'image', 'path': image.path});
+        // Add to element order at the end
+        _elementOrder.add({'type': 'image', 'path': image.path});
       });
     }
   }
@@ -1166,8 +1167,8 @@ class _AddNotePageState extends State<AddNotePage> {
       if (image != null) {
         setState(() {
           _imagePaths.add(image.path);
-          // Add to element order at the beginning
-          _elementOrder.insert(0, {'type': 'image', 'path': image.path});
+          // Add to element order at the end
+          _elementOrder.add({'type': 'image', 'path': image.path});
         });
       }
     } else if (galleryPermission.isPermanentlyDenied) {
@@ -1403,8 +1404,8 @@ class _AddNotePageState extends State<AddNotePage> {
       if (await File(path).exists()) {
         setState(() {
           _voiceNotePath = path;
-          // Add to element order at the beginning
-          _elementOrder.insert(0, {'type': 'voice', 'path': path});
+          // Add to element order at the end
+          _elementOrder.add({'type': 'voice', 'path': path});
           if (_titleController.text.trim().isEmpty) {
             _titleController.text = 'Voice Note $_voiceNoteCounter';
             _voiceNoteCounter++;
@@ -1543,7 +1544,12 @@ class _AddNotePageState extends State<AddNotePage> {
                             context: context,
                             builder:
                                 (context) => AlertDialog(
-                                  title: const Text('Remove Voice Note?'),
+                                  title: const Text(
+                                    'Remove Voice Note',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                   content: const Text(
                                     'Are you sure you want to remove this voice note?',
                                   ),
@@ -2546,7 +2552,16 @@ class _AddNotePageState extends State<AddNotePage> {
                 pw.Center(child: pw.Image(logo, width: 200, height: 100)),
                 pw.SizedBox(height: 16),
                 pw.Text(
-                  'Exported on: ${intl.DateFormat('MMM dd, yyyy hh:mm a').format(DateTime.now())}',
+                  'Note Exported on: ${intl.DateFormat('MMM dd, yyyy hh:mm a').format(DateTime.now())}',
+                  style: pw.TextStyle(
+                    font: fontMap['Roboto'],
+                    fontSize: 12,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+                pw.Text(
+                  'Note Created on: ${intl.DateFormat('MMM dd, yyyy hh:mm a').format(DateTime.now())}',
                   style: pw.TextStyle(
                     font: fontMap['Roboto'],
                     fontSize: 12,
@@ -2554,18 +2569,6 @@ class _AddNotePageState extends State<AddNotePage> {
                   ),
                 ),
                 pw.SizedBox(height: 16),
-                pw.Text(
-                  _titleController.text.isNotEmpty
-                      ? _titleController.text
-                      : 'Untitled Note',
-                  style: pw.TextStyle(
-                    font: fontMap['Roboto'],
-                    fontSize: 24,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                ..._buildNoteContent(fontMap),
                 if (_selectedFolderName != null) ...[
                   pw.Text(
                     'Folder: $_selectedFolderName',
@@ -2577,58 +2580,141 @@ class _AddNotePageState extends State<AddNotePage> {
                   ),
                   pw.SizedBox(height: 8),
                 ],
+                if (_labels.isNotEmpty) ...[
+                  pw.Text(
+                    'Labels: ${_labels.map((label) => "#$label").join(", ")}',
+                    style: pw.TextStyle(
+                      font: fontMap['Roboto'],
+                      fontSize: 14,
+                      color: PdfColors.blue600,
+                    ),
+                  ),
+                  pw.SizedBox(height: 8),
+                ],
                 if (_reminder != null) ...[
                   pw.Text(
                     'Reminder: ${intl.DateFormat('MMM dd, yyyy hh:mm a').format(_reminder!)}',
                     style: pw.TextStyle(
                       font: fontMap['Roboto'],
                       fontSize: 14,
-                      color: PdfColors.blueGrey,
+                      color: PdfColors.orange600,
+                    ),
+                  ),
+                  pw.SizedBox(height: 16),
+                ],
+                pw.Text(
+                  'Title:',
+                  style: pw.TextStyle(
+                    font: fontMap['Roboto'],
+                    fontSize: 16,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  _titleController.text.isNotEmpty
+                      ? _titleController.text
+                      : 'Untitled Note',
+                  style: pw.TextStyle(font: fontMap['Roboto'], fontSize: 20),
+                ),
+                pw.SizedBox(height: 16),
+                pw.Text(
+                  'Note:',
+                  style: pw.TextStyle(
+                    font: fontMap['Roboto'],
+                    fontSize: 16,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+                ..._buildNoteContent(fontMap),
+                if (_checklistItems.isNotEmpty) ...[
+                  pw.SizedBox(height: 16),
+                  pw.Text(
+                    'Checklist:',
+                    style: pw.TextStyle(
+                      font: fontMap['Roboto'],
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
                     ),
                   ),
                   pw.SizedBox(height: 8),
-                ],
-                if (_labels.isNotEmpty) ...[
-                  pw.Wrap(
-                    spacing: 8,
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children:
-                        _labels.map((label) {
-                          return pw.Container(
-                            padding: const pw.EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: pw.BoxDecoration(
-                              color: PdfColors.amber100,
-                              borderRadius: pw.BorderRadius.circular(8),
-                            ),
-                            child: pw.Text(
-                              '#$label',
-                              style: pw.TextStyle(
-                                font: fontMap['Roboto'],
-                                fontSize: 12,
+                        _checklistItems
+                            .asMap()
+                            .entries
+                            .where(
+                              (entry) =>
+                                  (entry.value['text'] ?? '').trim().isNotEmpty,
+                            )
+                            .toList()
+                            .reversed
+                            .map(
+                              (entry) => pw.Row(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Container(
+                                    width: 12,
+                                    height: 12,
+                                    margin: const pw.EdgeInsets.only(top: 4),
+                                    decoration: pw.BoxDecoration(
+                                      shape: pw.BoxShape.circle,
+                                      border: pw.Border.all(
+                                        color: PdfColors.black,
+                                      ),
+                                      color:
+                                          entry.value['checked'] == true
+                                              ? PdfColors.black
+                                              : PdfColors.white,
+                                    ),
+                                  ),
+                                  pw.SizedBox(width: 8),
+                                  pw.Expanded(
+                                    child: pw.Text(
+                                      entry.value['text'] ?? '',
+                                      style: pw.TextStyle(
+                                        font: fontMap['Roboto'],
+                                        fontSize: 16.0,
+                                        fontWeight: pw.FontWeight.normal,
+                                        fontStyle: pw.FontStyle.normal,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                          );
-                        }).toList(),
+                            )
+                            .toList(),
                   ),
-                  pw.SizedBox(height: 12),
+                ],
+                if (_voiceNotePath != null) ...[
+                  pw.SizedBox(height: 16),
+                  pw.Row(
+                    children: [
+                      pw.Text(
+                        'Voice Note Attached',
+                        style: pw.TextStyle(
+                          font: fontMap['Roboto'],
+                          fontSize: 14,
+                          color: PdfColors.red600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
                 if (_imagePaths.isNotEmpty) ...[
                   pw.SizedBox(height: 16),
-                  ..._buildImages(),
-                ],
-                if (_voiceNotePath != null) ...[
-                  pw.SizedBox(height: 12),
                   pw.Text(
-                    'Voice Note Attached',
+                    'Images:',
                     style: pw.TextStyle(
                       font: fontMap['Roboto'],
-                      fontSize: 14,
-                      fontStyle: pw.FontStyle.italic,
-                      color: PdfColors.deepOrange,
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
                     ),
                   ),
+                  pw.SizedBox(height: 8),
+                  ..._buildImages(),
                 ],
                 pw.Spacer(),
                 pw.Center(
@@ -2636,7 +2722,7 @@ class _AddNotePageState extends State<AddNotePage> {
                     'Made with PenCraft Pro',
                     style: pw.TextStyle(
                       font: fontMap['Roboto'],
-                      fontSize: 18,
+                      fontSize: 12,
                       fontWeight: pw.FontWeight.bold,
                       fontStyle: pw.FontStyle.italic,
                       color: PdfColors.grey600,
@@ -2724,12 +2810,6 @@ class _AddNotePageState extends State<AddNotePage> {
       final isStrikethrough = item['strikethrough'] == true;
       final fontSize = (item['fontSize'] as num?)?.toDouble() ?? 16.0;
       final fontFamily = item['fontFamily'] ?? 'Roboto';
-      final checklistItems =
-          (item['checklistItems'] as List<dynamic>? ?? [])
-              .where(
-                (task) => (task['text']?.toString().trim().isNotEmpty ?? false),
-              )
-              .toList();
       final selectedFont = fontMap[fontFamily] ?? fontMap['Roboto']!;
 
       if (text.isNotEmpty) {
@@ -2746,59 +2826,6 @@ class _AddNotePageState extends State<AddNotePage> {
                 if (isStrikethrough) pw.TextDecoration.lineThrough,
               ]),
             ),
-          ),
-        );
-        widgets.add(pw.SizedBox(height: 8));
-      }
-
-      if (checklistItems.isNotEmpty) {
-        widgets.add(
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children:
-                checklistItems.map((check) {
-                  return pw.Row(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Container(
-                        width: 12,
-                        height: 12,
-                        margin: const pw.EdgeInsets.only(top: 4),
-                        decoration: pw.BoxDecoration(
-                          shape: pw.BoxShape.circle,
-                          border: pw.Border.all(color: PdfColors.black),
-                          color:
-                              check['checked'] == true
-                                  ? PdfColors.black
-                                  : PdfColors.white,
-                        ),
-                      ),
-                      pw.SizedBox(width: 8),
-                      pw.Expanded(
-                        child: pw.Text(
-                          check['text'] ?? '',
-                          style: pw.TextStyle(
-                            font: selectedFont,
-                            fontSize: fontSize,
-                            fontWeight:
-                                isBold
-                                    ? pw.FontWeight.bold
-                                    : pw.FontWeight.normal,
-                            fontStyle:
-                                isItalic
-                                    ? pw.FontStyle.italic
-                                    : pw.FontStyle.normal,
-                            decoration: pw.TextDecoration.combine([
-                              if (isUnderline) pw.TextDecoration.underline,
-                              if (isStrikethrough)
-                                pw.TextDecoration.lineThrough,
-                            ]),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                }).toList(),
           ),
         );
         widgets.add(pw.SizedBox(height: 8));
@@ -3145,9 +3172,18 @@ class _AddNotePageState extends State<AddNotePage> {
           context: context,
           builder:
               (ctx) => AlertDialog(
-                title: const Text('Save your changes?'),
-                content: const Text(
-                  'You have unsaved changes. Save before exiting?',
+                title: Text(
+                  'Save your changes',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                  ),
+                ),
+                content: Text(
+                  'Do you want to save the changes you made?',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontSize: 16),
                 ),
                 actions: [
                   TextButton(
@@ -3356,7 +3392,12 @@ class _AddNotePageState extends State<AddNotePage> {
                                 context: context,
                                 builder:
                                     (ctx) => AlertDialog(
-                                      title: const Text('Remove Reminder?'),
+                                      title: const Text(
+                                        'Remove Reminder',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
                                       content: const Text(
                                         'Are you sure you want to remove this reminder?',
                                       ),
@@ -3436,7 +3477,10 @@ class _AddNotePageState extends State<AddNotePage> {
                           context: context,
                           builder:
                               (context) => AlertDialog(
-                                title: const Text('Remove Folder?'),
+                                title: const Text(
+                                  'Remove Folder',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
                                 content: Text(
                                   'Are you sure you want to remove this note from the folder "$_selectedFolderName"?',
                                 ),
@@ -3630,7 +3674,11 @@ class _AddNotePageState extends State<AddNotePage> {
                                                 builder:
                                                     (context) => AlertDialog(
                                                       title: const Text(
-                                                        'Confirm Remove',
+                                                        'Remove Label',
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
                                                       ),
                                                       content: Text(
                                                         'Are you sure you want to remove "$label"?',
@@ -3729,12 +3777,13 @@ class _AddNotePageState extends State<AddNotePage> {
                   ),
                   style: TextStyle(
                     fontSize: _contentFontSize,
-                    fontFamily:
-                        _selectedFontFamily, // Only content uses selected font
+                    fontFamily: _selectedFontFamily,
                     fontWeight: _selectedFontWeight,
                     fontStyle: _isItalic ? FontStyle.italic : FontStyle.normal,
-                    decoration:
-                        _isStrikethrough ? TextDecoration.lineThrough : null,
+                    decoration: TextDecoration.combine([
+                      if (_isUnderline) TextDecoration.underline,
+                      if (_isStrikethrough) TextDecoration.lineThrough,
+                    ]),
                   ),
                   onChanged: (text) {
                     setState(() {});
@@ -3792,7 +3841,12 @@ class _AddNotePageState extends State<AddNotePage> {
                                       context: context,
                                       builder:
                                           (context) => AlertDialog(
-                                            title: const Text('Remove Image?'),
+                                            title: const Text(
+                                              'Remove Image',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
                                             content: const Text(
                                               'Are you sure you want to remove this image?',
                                             ),
@@ -3897,17 +3951,16 @@ class _AddNotePageState extends State<AddNotePage> {
                               ),
                             ),
                             style: TextStyle(
-                              fontSize: _contentFontSize,
-                              fontWeight: _selectedFontWeight,
+                              fontSize: 16.0, // Fixed font size
+                              fontWeight:
+                                  FontWeight.normal, // Always normal weight
                               fontStyle:
-                                  _isItalic
-                                      ? FontStyle.italic
-                                      : FontStyle.normal,
-                              decoration: TextDecoration.combine([
-                                if (_checklistItems[index]['checked'])
-                                  TextDecoration.lineThrough,
-                                if (_isUnderline) TextDecoration.underline,
-                              ]),
+                                  FontStyle.normal, // Always normal style
+                              decoration:
+                                  _checklistItems[index]['checked']
+                                      ? TextDecoration.lineThrough
+                                      : null, // Only strikethrough when checked
+                              fontFamily: 'Roboto', // Fixed font family
                             ),
                           ),
                           trailing: IconButton(
@@ -3919,6 +3972,9 @@ class _AddNotePageState extends State<AddNotePage> {
                                     (context) => AlertDialog(
                                       title: const Text(
                                         'Remove Checklist Item',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                       content: const Text(
                                         'Are you sure you want to remove this item?',

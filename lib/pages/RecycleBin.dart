@@ -1164,7 +1164,7 @@ class _RecycleBinState extends State<RecycleBin> {
                   }
                 });
               } else {
-                print('RecycleBin - note: ' + note.toString());
+                print('RecycleBin - note: $note');
                 Navigator.push(
                   context,
                   MaterialPageRoute(

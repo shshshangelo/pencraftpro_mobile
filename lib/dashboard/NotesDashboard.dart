@@ -523,8 +523,62 @@ class _NotesDashboardState extends State<NotesDashboard> {
   }
 
   void _deleteSelectedNotes() async {
-    final toDelete = Set<String>.from(selectedNoteIds); // Important fix!
+    final toDelete = Set<String>.from(selectedNoteIds);
     final selectedCount = toDelete.length;
+
+    // Check if any of the selected notes are pinned
+    final hasPinnedNotes = notes.any(
+      (note) =>
+          selectedNoteIds.contains(note['id'].toString()) &&
+          note['isPinned'] == true,
+    );
+
+    if (hasPinnedNotes) {
+      if (mounted) {
+        await showDialog(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: Text(
+                  'Cannot Delete Pinned Notes',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+                content: Text(
+                  'Please unpin the notes before deleting them.',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontSize: 16),
+                ),
+                actions: [
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(
+                      'OK',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.onPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+        );
+      }
+      return;
+    }
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -569,7 +623,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
                   ),
                 ),
                 child: Text(
-                  'Delete',
+                  'Remove',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: Theme.of(context).colorScheme.onError,
                   ),
@@ -726,7 +780,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
         if (result['isNew'] == true) {
           message = 'Note created';
         } else if (result['delete'] == true) {
-          message = 'Note deleted';
+          message = 'Note removed';
         } else {
           message = 'Note updated';
         }
@@ -2032,14 +2086,14 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                                   ? FontStyle
                                                                       .italic
                                                                   : null,
-                                                          decoration:
-                                                              textIsUnderline
-                                                                  ? TextDecoration
-                                                                      .underline
-                                                                  : textIsStrikethrough
-                                                                  ? TextDecoration
-                                                                      .lineThrough
-                                                                  : null,
+                                                          decoration: TextDecoration.combine([
+                                                            if (textIsUnderline)
+                                                              TextDecoration
+                                                                  .underline,
+                                                            if (textIsStrikethrough)
+                                                              TextDecoration
+                                                                  .lineThrough,
+                                                          ]),
                                                         ),
                                                         maxLines: 3,
                                                         overflow:

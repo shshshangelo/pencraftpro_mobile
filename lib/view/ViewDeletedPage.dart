@@ -140,11 +140,11 @@ class _ViewDeletedPageState extends State<ViewDeletedPage> {
               widget.title.isNotEmpty ? widget.title : 'Untitled',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
-                fontSize: 16,
+                fontSize: 20,
               ),
             ),
-            const SizedBox(height: 8),
-            if (widget.reminder != null)
+            if (widget.reminder != null) ...[
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Icon(
@@ -168,8 +168,9 @@ class _ViewDeletedPageState extends State<ViewDeletedPage> {
                   ),
                 ],
               ),
-            const SizedBox(height: 8),
-            if (_folderName != null)
+            ],
+            if (_folderName != null) ...[
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Icon(
@@ -190,8 +191,9 @@ class _ViewDeletedPageState extends State<ViewDeletedPage> {
                   ),
                 ],
               ),
-            const SizedBox(height: 12),
-            if (widget.labels.isNotEmpty)
+            ],
+            if (widget.labels.isNotEmpty) ...[
+              const SizedBox(height: 12),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
@@ -232,7 +234,11 @@ class _ViewDeletedPageState extends State<ViewDeletedPage> {
                       );
                     }).toList(),
               ),
-            const SizedBox(height: 16),
+            ],
+            if (widget.reminder != null ||
+                _folderName != null ||
+                widget.labels.isNotEmpty)
+              const SizedBox(height: 16),
             ...widget.contentJson.map((item) {
               final checklistItems =
                   item['checklistItems'] as List<dynamic>? ?? [];
@@ -283,23 +289,11 @@ class _ViewDeletedPageState extends State<ViewDeletedPage> {
                             )
                             .map((task) {
                               final checked = task['checked'] ?? false;
-                              final fontSize =
-                                  (task['fontSize'] != null)
-                                      ? (task['fontSize'] as num).toDouble()
-                                      : (item['fontSize'] != null
-                                          ? (item['fontSize'] as num).toDouble()
-                                          : 16.0);
-                              final isBold =
-                                  task['bold'] == true || item['bold'] == true;
-                              final isItalic =
-                                  task['italic'] == true ||
-                                  item['italic'] == true;
-                              final isUnderline =
-                                  task['underline'] == true ||
-                                  item['underline'] == true;
-                              final isStrikethrough =
-                                  task['strikethrough'] == true ||
-                                  item['strikethrough'] == true;
+                              final fontSize = 16.0;
+                              final isBold = false;
+                              final isItalic = false;
+                              final isUnderline = false;
+                              final isStrikethrough = checked;
                               return Row(
                                 children: [
                                   Checkbox(
@@ -323,12 +317,10 @@ class _ViewDeletedPageState extends State<ViewDeletedPage> {
                                             isItalic
                                                 ? FontStyle.italic
                                                 : FontStyle.normal,
-                                        decoration: TextDecoration.combine([
-                                          if (isUnderline)
-                                            TextDecoration.underline,
-                                          if (isStrikethrough || checked)
-                                            TextDecoration.lineThrough,
-                                        ]),
+                                        decoration:
+                                            checked
+                                                ? TextDecoration.lineThrough
+                                                : null,
                                         color:
                                             Theme.of(
                                               context,

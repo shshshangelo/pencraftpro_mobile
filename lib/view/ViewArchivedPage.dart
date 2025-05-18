@@ -290,23 +290,11 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                             )
                             .map((task) {
                               final checked = task['checked'] ?? false;
-                              final fontSize =
-                                  (task['fontSize'] != null)
-                                      ? (task['fontSize'] as num).toDouble()
-                                      : (item['fontSize'] != null
-                                          ? (item['fontSize'] as num).toDouble()
-                                          : 16.0);
-                              final isBold =
-                                  task['bold'] == true || item['bold'] == true;
-                              final isItalic =
-                                  task['italic'] == true ||
-                                  item['italic'] == true;
-                              final isUnderline =
-                                  task['underline'] == true ||
-                                  item['underline'] == true;
-                              final isStrikethrough =
-                                  task['strikethrough'] == true ||
-                                  item['strikethrough'] == true;
+                              final fontSize = 16.0;
+                              final isBold = false;
+                              final isItalic = false;
+                              final isUnderline = false;
+                              final isStrikethrough = checked;
                               return Row(
                                 children: [
                                   Checkbox(
@@ -330,12 +318,10 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
                                             isItalic
                                                 ? FontStyle.italic
                                                 : FontStyle.normal,
-                                        decoration: TextDecoration.combine([
-                                          if (isUnderline)
-                                            TextDecoration.underline,
-                                          if (isStrikethrough || checked)
-                                            TextDecoration.lineThrough,
-                                        ]),
+                                        decoration:
+                                            checked
+                                                ? TextDecoration.lineThrough
+                                                : null,
                                         color:
                                             Theme.of(
                                               context,
