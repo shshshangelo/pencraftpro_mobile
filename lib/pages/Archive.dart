@@ -133,6 +133,20 @@ class _ArchiveState extends State<Archive> {
           ),
         if (isEditing)
           IconButton(
+            icon: const Icon(Icons.select_all),
+            onPressed: () {
+              setState(() {
+                if (selectedNoteIds.length == notes.length) {
+                  selectedNoteIds.clear();
+                } else {
+                  selectedNoteIds =
+                      notes.map((note) => note['id'].toString()).toList();
+                }
+              });
+            },
+          ),
+        if (isEditing)
+          IconButton(
             icon: const Icon(Icons.restore),
             onPressed:
                 selectedNoteIds.isNotEmpty ? _restoreSelectedNotes : null,
@@ -225,6 +239,7 @@ class _ArchiveState extends State<Archive> {
         title,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           fontSize: 13,
+          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
           color:
               selected
                   ? Theme.of(context).colorScheme.primary
@@ -237,24 +252,72 @@ class _ArchiveState extends State<Archive> {
               ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
               : null,
       onTap: () async {
-        if (route != '/accountsettings') {
-          final isComplete = await ProfileService.isProfileComplete();
-          if (!isComplete) {
-            if (!mounted) return;
-            Navigator.pushNamed(context, '/accountsettings');
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Please complete your profile setup first.',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onErrorContainer,
+        // Skip profile check for account settings and logout
+        if (route == '/accountsettings' || route == '/logout') {
+          Navigator.pushNamed(context, route);
+          return;
+        }
+
+        // Skip profile check for basic features
+        if (route == '/notes' ||
+            route == '/reminders' ||
+            route == '/labels' ||
+            route == '/folders' ||
+            route == '/archive' ||
+            route == '/deleted') {
+          Navigator.pushNamed(context, route);
+          return;
+        }
+
+        // For other features that might need profile completion
+        final isComplete = await ProfileService.isProfileComplete();
+        if (!isComplete) {
+          if (!mounted) return;
+
+          // Show dialog instead of forcing navigation
+          final shouldGoToSettings = await showDialog<bool>(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: Text(
+                    'Complete Profile Setup',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
+                  content: Text(
+                    'Would you like to complete your profile setup now?',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text(
+                        'Later',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text(
+                        'Complete Setup',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                backgroundColor: Theme.of(context).colorScheme.errorContainer,
-              ),
-            );
-            return;
+          );
+
+          if (shouldGoToSettings == true) {
+            Navigator.pushNamed(context, '/accountsettings');
           }
+          return;
         }
         Navigator.pushNamed(context, route);
       },
@@ -411,31 +474,30 @@ class _ArchiveState extends State<Archive> {
                 onTap: () {
                   if (isEditing) {
                     setState(() {
-                      if (isSelected) {
-                        selectedNoteIds.remove(id);
+                      if (selectedNoteIds.contains(note['id'])) {
+                        selectedNoteIds.remove(note['id']);
                       } else {
-                        selectedNoteIds.add(id);
+                        selectedNoteIds.add(note['id']);
                       }
                     });
                   } else {
+                    print('Archive - note: ' + note.toString());
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder:
-                            (_) => ViewArchivedPage(
-                              title: note['title'] ?? 'Untitled',
-                              contentJson:
-                                  (note['contentJson'] as List?)
-                                      ?.cast<Map<String, dynamic>>() ??
-                                  [],
-                              imagePaths: imagePaths,
-                              voiceNote: note['voiceNote'],
-                              labels: labels,
-                              fontFamily: note['fontFamily'],
-                              folderId: note['folderId'],
-                              folderColor: note['folderColor'],
-                              folderName: note['folderName'],
-                            ),
+                            (_) => ViewArchivedPage.fromJson({
+                              'title': note['title'] ?? 'Untitled',
+                              'contentJson': note['contentJson'] ?? [],
+                              'imagePaths': note['imagePaths'] ?? [],
+                              'voiceNote': note['voiceNote'],
+                              'labels': note['labels'] ?? [],
+                              'reminder': note['reminder'],
+                              'fontFamily': note['fontFamily'],
+                              'folderId': note['folderId'],
+                              'folderColor': note['folderColor'],
+                              'folderName': note['folderName'],
+                            }),
                       ),
                     );
                   }
@@ -454,11 +516,32 @@ class _ArchiveState extends State<Archive> {
                   elevation: 5,
                   child: Stack(
                     children: [
+                      if (isEditing && isSelected)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 1.5,
+                              ),
+                            ),
+                            padding: const EdgeInsets.all(1.5),
+                            child: Icon(
+                              Icons.check,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.onPrimary,
+                            ),
+                          ),
+                        ),
                       Padding(
                         padding: EdgeInsets.all(padding),
                         child: LayoutBuilder(
                           builder: (context, constraints) {
-                            return Container(
+                            return SizedBox(
                               height: isLandscape ? 200 : 300,
                               child: SingleChildScrollView(
                                 physics: const NeverScrollableScrollPhysics(),
@@ -647,8 +730,6 @@ class _ArchiveState extends State<Archive> {
                                           ).textTheme.titleMedium?.copyWith(
                                             fontWeight: FontWeight.bold,
                                             fontSize: isLandscape ? 14 : 16,
-                                            fontFamily:
-                                                note['fontFamily'] ?? 'Roboto',
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
@@ -1065,10 +1146,13 @@ class _ArchiveState extends State<Archive> {
     final confirm = await showDialog<bool>(
       context: context,
       builder:
-          (ctx) => AlertDialog(
+          (context) => AlertDialog(
             title: Text(
-              'Restore Notes',
-              style: Theme.of(context).textTheme.titleMedium,
+              'Confirm Restoration',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
             ),
             content: Text(
               'Are you sure you want to restore the selected notes?',
@@ -1076,7 +1160,7 @@ class _ArchiveState extends State<Archive> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
+                onPressed: () => Navigator.pop(context, false),
                 child: Text(
                   'Cancel',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -1085,7 +1169,10 @@ class _ArchiveState extends State<Archive> {
                 ),
               ),
               ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                ),
+                onPressed: () => Navigator.pop(context, true),
                 child: Text(
                   'Restore',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -1140,9 +1227,19 @@ class _ArchiveState extends State<Archive> {
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/notes', (route) => false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Notes restored'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(
+              'Notes restored.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
       }

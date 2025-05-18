@@ -54,8 +54,12 @@ class AboutApp extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
+                '• Advanced drawing tools with multiple brush types (normal, calligraphy, dotted, airbrush, marker)\n'
+                '• Text tool with multiple font styles and sizes\n'
+                '• Image import and manipulation capabilities\n'
+                '• Color picker and eyedropper tool\n'
+                '• Undo/redo functionality\n'
                 '• Smart note-taking with categories and labels\n'
-                '• Drawing mode for sketches, diagrams, and handwriting\n'
                 '• Cloud sync across devices\n'
                 '• Secure login with email/password and Google Sign-In\n'
                 '• Custom folders, archives, and recycle bin\n'

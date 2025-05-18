@@ -330,6 +330,17 @@ class RedirectPage extends StatelessWidget {
       return;
     }
 
+    // Check email verification first
+    await user.reload(); // Reload user to get latest verification status
+    if (!user.emailVerified &&
+        !user.providerData.any((info) => info.providerId == 'google.com')) {
+      debugPrint("🔴 Email not verified, redirecting to /verify");
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/verify', (route) => false);
+      return;
+    }
+
     bool isNameVerified = false;
     bool isRoleSelected = false;
     bool isIdVerified = false;

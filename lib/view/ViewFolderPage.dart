@@ -217,6 +217,9 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
 
                       return GestureDetector(
                         onTap: () {
+                          print(
+                            'ViewFolderPage - note before navigation: $note',
+                          );
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -234,6 +237,7 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                     imagePaths: imagePaths,
                                     voiceNote: note['voiceNote'],
                                     labels: labels,
+                                    reminder: reminder,
                                     fontFamily: note['fontFamily'],
                                     folderId: note['folderId'],
                                     folderColor: note['folderColor'],
@@ -254,7 +258,7 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                 padding: EdgeInsets.all(padding),
                                 child: LayoutBuilder(
                                   builder: (context, constraints) {
-                                    return Container(
+                                    return SizedBox(
                                       height: isLandscape ? 200 : 300,
                                       child: SingleChildScrollView(
                                         physics:
@@ -474,9 +478,6 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                                             isLandscape
                                                                 ? 14
                                                                 : 16,
-                                                        fontFamily:
-                                                            note['fontFamily'] ??
-                                                            'Roboto',
                                                       ),
                                                   maxLines: 1,
                                                   overflow:

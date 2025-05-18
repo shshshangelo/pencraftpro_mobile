@@ -255,7 +255,7 @@ class _NotesByLabelScreenState extends State<NotesByLabelScreen> {
                                 padding: EdgeInsets.all(padding),
                                 child: LayoutBuilder(
                                   builder: (context, constraints) {
-                                    return Container(
+                                    return SizedBox(
                                       height: isLandscape ? 200 : 300,
                                       child: SingleChildScrollView(
                                         physics:
@@ -475,7 +475,6 @@ class _NotesByLabelScreenState extends State<NotesByLabelScreen> {
                                                             isLandscape
                                                                 ? 14
                                                                 : 16,
-                                                        fontFamily: fontFamily,
                                                       ),
                                                   maxLines: 1,
                                                   overflow:

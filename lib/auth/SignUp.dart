@@ -58,8 +58,19 @@ class _SignUpState extends State<SignUp> {
     if (_formKey.currentState!.validate()) {
       if (!_acceptedTerms) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please accept the Terms & Privacy Policy.'),
+          SnackBar(
+            content: Text(
+              'Please accept the Terms & Conditions.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
         return;
@@ -137,9 +148,22 @@ class _SignUpState extends State<SignUp> {
         }
         print('Sign-up error: $e');
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(errorMessage)));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '$errorMessage.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                ),
+              ),
+              backgroundColor: Theme.of(context).colorScheme.errorContainer,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          );
         }
       } finally {
         if (mounted) {
@@ -166,7 +190,7 @@ class _SignUpState extends State<SignUp> {
               children: [
                 const Center(
                   child: Text(
-                    'PenCraft Pro - Terms & Privacy',
+                    'PenCraft Pro - Terms & Conditions',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -188,17 +212,17 @@ class _SignUpState extends State<SignUp> {
                 const SizedBox(height: 8),
                 const Text('4. Fair Use Policy'),
                 const Text(
-                  'Don’t abuse system resources (e.g., spamming, overloading servers).',
+                  "Don't abuse system resources (e.g., spamming, overloading servers).",
                 ),
                 const SizedBox(height: 8),
                 const Text('5. Data Privacy'),
                 const Text(
-                  'We don’t sell your data. Everything is stored securely and confidentially.',
+                  "We don't sell your data. Everything is stored securely and confidentially.",
                 ),
                 const SizedBox(height: 8),
                 const Text('6. Updates & Changes'),
                 const Text(
-                  'We may modify the terms; we’ll notify users of major changes.',
+                  "We may modify the terms; we'll notify users of major changes.",
                 ),
                 const SizedBox(height: 8),
                 const Text('7. Third-Party Integrations'),
@@ -206,12 +230,12 @@ class _SignUpState extends State<SignUp> {
                 const SizedBox(height: 8),
                 const Text('8. Termination'),
                 const Text(
-                  'Violation of terms may result in suspension or deletion of your account.',
+                  "Violation of terms may result in suspension or deletion of your account.",
                 ),
                 const SizedBox(height: 8),
                 const Text('9. Limitation of Liability'),
                 const Text(
-                  'We do our best, but we’re not liable for data loss or service issues.',
+                  "We do our best, but we're not liable for data loss or service issues.",
                 ),
                 const SizedBox(height: 8),
                 const Text('10. Contact & Support'),
@@ -531,7 +555,7 @@ class _SignUpState extends State<SignUp> {
                           children: [
                             const TextSpan(text: 'I agree to the '),
                             TextSpan(
-                              text: 'Terms & Privacy Policy',
+                              text: 'Terms & Conditions',
                               style: const TextStyle(
                                 fontSize: 14,
                                 color: Colors.blue,

@@ -49,14 +49,14 @@ class _RecycleBinState extends State<RecycleBin> {
       try {
         await FirebaseFirestore.instance.collection('notes').doc(id).delete();
       } catch (e) {
-        print('❌ Failed to delete pending ID $id: $e');
+        print('Failed to delete pending ID $id: $e');
         failed.add(id);
       }
     }
 
     await prefs.setStringList('pendingDeletes', failed);
     if (pending.isNotEmpty && failed.isEmpty) {
-      print('✅ All pending deletes synced to Firestore');
+      print('All pending deletes synced to Firestore.');
     }
   }
 
@@ -82,9 +82,20 @@ class _RecycleBinState extends State<RecycleBin> {
         }
       });
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error loading notes: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error loading notes: $e.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     }
   }
 
@@ -93,9 +104,20 @@ class _RecycleBinState extends State<RecycleBin> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('notes', jsonEncode(notes));
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error saving notes: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error saving notes: $e.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     }
   }
 
@@ -174,7 +196,7 @@ class _RecycleBinState extends State<RecycleBin> {
             .doc(firestoreId)
             .delete();
       } catch (e) {
-        print('⚠️ Offline or failed to delete from Firestore: $e');
+        print('Offline or failed to delete from Firestore: $e');
 
         final prefs = await SharedPreferences.getInstance();
         final pending = prefs.getStringList('pendingDeletes') ?? [];
@@ -188,10 +210,16 @@ class _RecycleBinState extends State<RecycleBin> {
             SnackBar(
               content: Text(
                 'Offline: "$firestoreId" will be removed from cloud later.',
-                style: Theme.of(context).textTheme.bodyMedium,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
               duration: const Duration(seconds: 3),
               behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
           );
         }
@@ -205,15 +233,41 @@ class _RecycleBinState extends State<RecycleBin> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Note permanently deleted')),
+          SnackBar(
+            content: Text(
+              'Note permanently deleted.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         );
       }
     } catch (e) {
-      print('❌ Error deleting note: $e');
+      print('Error deleting note: $e.');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error deleting note: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error deleting note: $e.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
       }
     }
   }
@@ -227,7 +281,10 @@ class _RecycleBinState extends State<RecycleBin> {
           (context) => AlertDialog(
             title: Text(
               'Confirm Deletion',
-              style: Theme.of(context).textTheme.titleMedium,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
             ),
             content: Text(
               'Are you sure you want to permanently delete the selected notes? This action cannot be undone.',
@@ -279,7 +336,7 @@ class _RecycleBinState extends State<RecycleBin> {
                   .doc(firestoreId)
                   .delete();
             } catch (e) {
-              print('⚠️ Firestore delete failed for $firestoreId: $e');
+              print('Firestore delete failed for $firestoreId: $e');
               if (!pending.contains(firestoreId)) {
                 pending.add(firestoreId);
               }
@@ -289,10 +346,16 @@ class _RecycleBinState extends State<RecycleBin> {
                   SnackBar(
                     content: Text(
                       'Offline: "$firestoreId" will be removed from cloud later.',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     duration: const Duration(seconds: 3),
                     behavior: SnackBarBehavior.floating,
+                    margin: const EdgeInsets.all(8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 );
               }
@@ -315,15 +378,39 @@ class _RecycleBinState extends State<RecycleBin> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Notes permanently deleted')),
+            SnackBar(
+              content: Text(
+                'Notes permanently deleted.',
+                style: TextStyle(color: Theme.of(context).colorScheme.onError),
+              ),
+              backgroundColor: Theme.of(context).colorScheme.error,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
           );
         }
       } catch (e) {
-        print('❌ Error deleting notes: $e');
+        print('Error deleting notes: $e.');
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Error deleting notes: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Error deleting notes: $e.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                ),
+              ),
+              backgroundColor: Theme.of(context).colorScheme.errorContainer,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          );
         }
       }
     }
@@ -386,12 +473,55 @@ class _RecycleBinState extends State<RecycleBin> {
         );
       }
     } catch (e) {
-      print('❌ Error during auto-deletion: $e');
+      print('Error during auto-deletion: $e');
     }
   }
 
   void _restoreSelectedNotes() async {
     try {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              title: Text(
+                'Confirm Restoration',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+              content: Text(
+                'Are you sure you want to restore the selected notes?',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text(
+                    'Cancel',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                  ),
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text(
+                    'Restore',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+      );
+
+      if (confirm != true) return;
+
       for (var id in selectedNotes) {
         final index = notes.indexWhere((note) => note['id'] == id);
         if (index != -1) {
@@ -405,7 +535,7 @@ class _RecycleBinState extends State<RecycleBin> {
                 .doc(firestoreId)
                 .update({'isDeleted': false});
           } catch (e) {
-            print('⚠️ Offline or failed to update Firestore: $e');
+            print('Offline or failed to update Firestore: $e');
             final prefs = await SharedPreferences.getInstance();
             final pendingRestores =
                 prefs.getStringList('pendingRestores') ?? [];
@@ -427,16 +557,42 @@ class _RecycleBinState extends State<RecycleBin> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Notes restored successfully')),
+          SnackBar(
+            content: Text(
+              'Notes restored successfully.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         );
         Navigator.pushNamedAndRemoveUntil(context, '/notes', (route) => false);
       }
     } catch (e) {
-      print('❌ Error restoring notes: $e');
+      print('Error restoring notes: $e.');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error restoring notes: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error restoring notes: $e.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
       }
     }
   }
@@ -693,6 +849,11 @@ class _RecycleBinState extends State<RecycleBin> {
                   ),
                 ),
                 backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.all(8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             );
             return;
@@ -1003,6 +1164,7 @@ class _RecycleBinState extends State<RecycleBin> {
                   }
                 });
               } else {
+                print('RecycleBin - note: ' + note.toString());
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -1042,7 +1204,7 @@ class _RecycleBinState extends State<RecycleBin> {
                     padding: EdgeInsets.all(padding * 1.5),
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        return Container(
+                        return SizedBox(
                           height: isLandscape ? 200 : 300,
                           child: SingleChildScrollView(
                             physics: const NeverScrollableScrollPhysics(),
@@ -1124,8 +1286,6 @@ class _RecycleBinState extends State<RecycleBin> {
                                     ).textTheme.titleMedium?.copyWith(
                                       fontWeight: FontWeight.bold,
                                       fontSize: isLandscape ? 14 : 16,
-                                      fontFamily:
-                                          note['fontFamily'] ?? 'Roboto',
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,

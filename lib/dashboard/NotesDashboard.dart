@@ -13,6 +13,7 @@ import 'dart:convert';
 import '../notes/AddNotePage.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:pencraftpro/services/profile_service.dart';
+import 'package:pencraftpro/FolderService.dart';
 
 class NotesDashboard extends StatefulWidget {
   const NotesDashboard({super.key});
@@ -95,13 +96,32 @@ class _NotesDashboardState extends State<NotesDashboard> {
         });
   }
 
-  void _handleNoteChanges(QuerySnapshot snapshot) {
+  void _handleNoteChanges(QuerySnapshot snapshot) async {
     for (var change in snapshot.docChanges) {
       final noteData = change.doc.data() as Map<String, dynamic>?;
       if (noteData == null) continue;
 
       final noteId = change.doc.id;
       noteData['id'] = noteId;
+
+      // Verify folder still exists before displaying folder information
+      if (noteData['folderId'] != null) {
+        final folders = await FolderService.loadFolders();
+        final folderExists = folders.any(
+          (f) => f.id.toString() == noteData['folderId'],
+        );
+        if (!folderExists) {
+          noteData.remove('folderId');
+          noteData.remove('folderColor');
+          noteData.remove('folderName');
+        } else {
+          // If folder exists, ensure we have the latest folder information
+          final folder = folders.firstWhere(
+            (f) => f.id.toString() == noteData['folderId'],
+          );
+          noteData['folderName'] = folder.name;
+        }
+      }
 
       setState(() {
         final index = notes.indexWhere((n) => n['id'] == noteId);
@@ -421,10 +441,17 @@ class _NotesDashboardState extends State<NotesDashboard> {
 
       if (isOffline && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Note saved locally. Will sync when online.'),
-            duration: Duration(seconds: 3),
+          SnackBar(
+            content: Text(
+              'Note saved locally. Will sync when online.',
+              style: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primary,
             behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
       }
@@ -507,8 +534,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
               borderRadius: BorderRadius.circular(16),
             ),
             title: Text(
-              'Delete Notes',
-              textAlign: TextAlign.center,
+              'Remove Notes',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
@@ -516,9 +542,8 @@ class _NotesDashboardState extends State<NotesDashboard> {
             ),
             content: Text(
               selectedCount == 1
-                  ? 'Are you sure you want to delete this note?'
-                  : 'Are you sure you want to delete $selectedCount notes?',
-              textAlign: TextAlign.center,
+                  ? 'Are you sure you want to remove this note?'
+                  : 'Are you sure you want to remove $selectedCount notes?',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(fontSize: 16),
@@ -591,10 +616,14 @@ class _NotesDashboardState extends State<NotesDashboard> {
         SnackBar(
           content: Text(
             selectedCount == 1
-                ? 'Note deleted.'
-                : '$selectedCount notes deleted.',
+                ? 'Note removed.'
+                : '$selectedCount notes removed.',
+            style: TextStyle(color: Theme.of(context).colorScheme.onError),
           ),
-          duration: const Duration(seconds: 5),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
     }
@@ -721,11 +750,11 @@ class _NotesDashboardState extends State<NotesDashboard> {
                   title: Column(
                     children: [
                       Icon(
-                        message == 'Note deleted'
+                        message == 'Note removed'
                             ? Icons.delete_forever
                             : Icons.check_circle,
                         color:
-                            message == 'Note deleted'
+                            message == 'Note removed'
                                 ? Theme.of(context).colorScheme.error
                                 : Theme.of(context).colorScheme.primary,
                         size: 40,
@@ -749,7 +778,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
-                            message == 'Note deleted'
+                            message == 'Note removed'
                                 ? Theme.of(context).colorScheme.error
                                 : Theme.of(context).colorScheme.primary,
                         shape: RoundedRectangleBorder(
@@ -844,6 +873,11 @@ class _NotesDashboardState extends State<NotesDashboard> {
                 ),
               ),
               backgroundColor: Theme.of(context).colorScheme.errorContainer,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
           );
           return;
@@ -999,9 +1033,20 @@ class _NotesDashboardState extends State<NotesDashboard> {
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('You have been removed from the collaboration.'),
-                duration: Duration(seconds: 3),
+              SnackBar(
+                content: Text(
+                  'You have been removed from the collaboration.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onPrimary,
+                  ),
+                ),
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.all(8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                duration: const Duration(seconds: 3),
               ),
             );
           }
@@ -1056,6 +1101,15 @@ class _NotesDashboardState extends State<NotesDashboard> {
             SnackBar(
               content: Text(
                 '$emailToRemove has been removed from the collaboration.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onPrimary,
+                ),
+              ),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
               duration: const Duration(seconds: 3),
             ),
@@ -1065,9 +1119,18 @@ class _NotesDashboardState extends State<NotesDashboard> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to remove collaborator. Please try again.'),
-            duration: Duration(seconds: 3),
+          SnackBar(
+            content: Text(
+              'Failed to remove collaborator. Please try again.',
+              style: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -1353,8 +1416,19 @@ class _NotesDashboardState extends State<NotesDashboard> {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('Notes refreshed successfully.'),
-                            duration: const Duration(seconds: 2),
+                            content: Text(
+                              'Notes refreshed successfully.',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onPrimary,
+                              ),
+                            ),
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primary,
+                            behavior: SnackBarBehavior.floating,
+                            margin: const EdgeInsets.all(8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                         );
                       }
@@ -1365,8 +1439,17 @@ class _NotesDashboardState extends State<NotesDashboard> {
                           SnackBar(
                             content: Text(
                               'Failed to refresh shared notes. Using local storage.',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onPrimary,
+                              ),
                             ),
-                            duration: const Duration(seconds: 2),
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primary,
+                            behavior: SnackBarBehavior.floating,
+                            margin: const EdgeInsets.all(8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                         );
                       }
@@ -1376,8 +1459,19 @@ class _NotesDashboardState extends State<NotesDashboard> {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Refreshed from local storage.'),
-                          duration: const Duration(seconds: 2),
+                          content: Text(
+                            'Refreshed from local storage.',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onPrimary,
+                            ),
+                          ),
+                          backgroundColor:
+                              Theme.of(context).colorScheme.primary,
+                          behavior: SnackBarBehavior.floating,
+                          margin: const EdgeInsets.all(8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
                       );
                     }
@@ -1570,7 +1664,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                       padding: EdgeInsets.all(padding),
                                       child: LayoutBuilder(
                                         builder: (context, constraints) {
-                                          return Container(
+                                          return SizedBox(
                                             height: isLandscape ? 200 : 300,
                                             child: SingleChildScrollView(
                                               physics:
@@ -1618,7 +1712,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                             width: 4,
                                                           ),
                                                           Text(
-                                                            'Shared Notes',
+                                                            'Collaborated Notes',
                                                             style: Theme.of(
                                                               context,
                                                             ).textTheme.bodySmall?.copyWith(
@@ -2405,24 +2499,21 @@ class _NotesDashboardState extends State<NotesDashboard> {
       final content = note.child;
       if (content is LayoutBuilder) {
         final builder = content.builder;
-        if (builder != null) {
-          final result = builder(context, BoxConstraints());
-          if (result is SingleChildScrollView) {
-            final child = result.child;
-            if (child is Container) {
-              final column = child.child;
-              if (column is Column) {
-                // Count non-empty content elements
-                int contentCount = 0;
-                for (var widget in column.children) {
-                  if (widget is Padding && widget.child != null) {
-                    contentCount++;
-                  }
+        final result = builder(context, BoxConstraints());
+        if (result is SingleChildScrollView) {
+          final child = result.child;
+          if (child is Container) {
+            final column = child.child;
+            if (column is Column) {
+              // Count non-empty content elements
+              int contentCount = 0;
+              for (var widget in column.children) {
+                if (widget is Padding && widget.child != null) {
+                  contentCount++;
                 }
-                hasMultipleContent =
-                    contentCount >
-                    3; // Increased threshold to 3 content elements
               }
+              hasMultipleContent =
+                  contentCount > 3; // Increased threshold to 3 content elements
             }
           }
         }

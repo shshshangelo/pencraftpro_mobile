@@ -11,13 +11,14 @@ class FAQsPage extends StatelessWidget {
         'answer': 'Yes, it is free with optional premium features.',
       },
       {
-        'question': 'How do I save notes?',
-        'answer': 'Notes are saved automatically as you type.',
+        'question': 'How do I save notes/drawings?',
+        'answer':
+            'Notes/Drawings need to be saved manually. Make sure to tap the save button after making changes to ensure your work is preserved.',
       },
       {
         'question': 'Can I use it offline?',
         'answer':
-            'Yes, once you’re logged in, you can use most features like writing and reading notes offline. However, logging in or signing up requires an internet connection for verification.',
+            'Yes, once you\'re logged in, you can use most features like taking note and drawings. However, logging in or signing up requires an internet connection for verification.',
       },
       {
         'question': 'Can I recover deleted notes?',
@@ -42,7 +43,26 @@ class FAQsPage extends StatelessWidget {
       {
         'question': 'Is my data backed up?',
         'answer':
-            'Yes, your notes are securely stored in the cloud when you’re online, so they’re backed up automatically.',
+            'Yes, your notes are securely stored in the cloud when you\'re online, so they\'re backed up automatically.',
+      },
+      {
+        'question': 'What drawing tools are available?',
+        'answer':
+            'PenCraft Pro offers multiple brush types (normal, calligraphy, dotted, airbrush, marker) and image import capabilities. You can also use the color picker and eyedropper tool for precise color selection.',
+      },
+      {
+        'question': 'Can I undo/redo my drawing actions?',
+        'answer':
+            'Yes, you can use the undo/redo functionality to revert or reapply your drawing actions.',
+      },
+      {
+        'question': 'Can I import images into my drawings?',
+        'answer':
+            'Yes, you can import images and manipulate them within your drawings. You can resize, move, and adjust the images as needed.',
+      },
+      {
+        'question': 'Can I save my drawing in JPEG?',
+        'answer': 'Yes, you can as long as you have done the drawing.',
       },
     ];
 

@@ -40,7 +40,7 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Delete Drawing?'),
+            title: const Text('Remove Drawing?'),
             content: const Text(
               'This drawing will be permanently removed. Are you sure?',
             ),
@@ -55,7 +55,7 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                   backgroundColor: Colors.red,
                 ),
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Delete'),
+                child: const Text('Remove'),
               ),
             ],
           ),
@@ -86,10 +86,10 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
             .collection('drawings')
             .doc(fileName)
             .delete();
-        print('Successfully deleted drawing from Firestore');
+        print('Successfully removed drawing from Firestore.');
       }
     } catch (e) {
-      print('Failed to delete from Firestore: $e');
+      print('Failed to remove from Firestore: $e');
       // Continue with local deletion even if Firestore deletion fails
     }
 
@@ -97,9 +97,20 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
     await prefs.setStringList('saved_drawings', _savedDrawings);
 
     setState(() {});
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Drawing removed.')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Drawing removed.',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
+        ),
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
   }
 
   Future<void> _renameDrawing(int index) async {
@@ -129,6 +140,10 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
               ),
               TextButton(
                 onPressed: () => Navigator.pop(context, controller.text.trim()),
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
                 child: const Text('Save', style: TextStyle(fontSize: 14)),
               ),
             ],
@@ -148,9 +163,22 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
 
       // Show success message
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Title updated.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Title updated.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
       }
     }
   }
@@ -296,6 +324,23 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                                       SnackBar(
                                         content: Text(
                                           'Drawing file "$title" not found.',
+                                          style: TextStyle(
+                                            color:
+                                                Theme.of(
+                                                  context,
+                                                ).colorScheme.onErrorContainer,
+                                          ),
+                                        ),
+                                        backgroundColor:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.errorContainer,
+                                        behavior: SnackBarBehavior.floating,
+                                        margin: const EdgeInsets.all(8),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                       ),
                                     );

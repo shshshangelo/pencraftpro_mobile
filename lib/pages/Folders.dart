@@ -5,6 +5,7 @@ import 'package:pencraftpro/services/logout_service.dart';
 import 'package:pencraftpro/view/ViewFolderPage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pencraftpro/services/profile_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Folders extends StatefulWidget {
   const Folders({super.key});
@@ -94,9 +95,22 @@ class _FoldersState extends State<Folders> {
         folders[index] = Folder(id: folder.id, name: newName);
         await FolderService.saveFolders(folders);
         setState(() {});
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Folder renamed to "$newName"')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Folder renamed to "$newName".',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
       }
     }
   }
@@ -172,9 +186,20 @@ class _FoldersState extends State<Folders> {
     if (name != null && name.isNotEmpty) {
       await FolderService.addFolder(name);
       await _loadFolders();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Folder "$name" created.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Folder "$name" created.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     }
   }
 
@@ -188,8 +213,7 @@ class _FoldersState extends State<Folders> {
               borderRadius: BorderRadius.circular(16),
             ),
             title: Text(
-              count > 1 ? 'Delete $count Folders' : 'Delete Folder',
-              textAlign: TextAlign.center,
+              count > 1 ? 'Delete $count Folders' : 'Remove Folder',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
@@ -197,9 +221,8 @@ class _FoldersState extends State<Folders> {
             ),
             content: Text(
               count > 1
-                  ? 'Are you sure you want to delete these $count folders?\nNotes inside will stay but unassigned.'
-                  : 'Are you sure you want to delete this folder?\nNotes inside will stay but unassigned.',
-              textAlign: TextAlign.center,
+                  ? 'Are you sure you want to remove these $count folders? Notes inside will stay but unassigned.'
+                  : 'Are you sure you want to remove this folder? Notes inside will stay but unassigned.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(fontSize: 16),
@@ -226,7 +249,7 @@ class _FoldersState extends State<Folders> {
                 ),
                 onPressed: () => Navigator.pop(ctx, true),
                 child: Text(
-                  'Delete',
+                  'Remove',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: Theme.of(context).colorScheme.onError,
                   ),
@@ -252,18 +275,15 @@ class _FoldersState extends State<Folders> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          count > 1 ? '$count folders deleted' : 'Folder deleted',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Theme.of(context).colorScheme.onSurface,
+          count > 1 ? '$count folders deleted.' : 'Folder deleted.',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onErrorContainer,
           ),
         ),
-        backgroundColor: Theme.of(context).colorScheme.surface,
+        backgroundColor: Theme.of(context).colorScheme.errorContainer,
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
+        margin: const EdgeInsets.all(8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -276,13 +296,42 @@ class _FoldersState extends State<Folders> {
     final updatedNotes =
         jsonList.map<Map<String, dynamic>>((note) {
           if (deletedFolderIds.contains(note['folderId'])) {
-            note['folderId'] = null;
-            note['folderColor'] = null;
+            // Create a new map without folder-related fields
+            final Map<String, dynamic> newNote = Map<String, dynamic>.from(
+              note,
+            );
+            newNote.remove('folderId');
+            newNote.remove('folderColor');
+            newNote.remove('folderName');
+            return newNote;
           }
           return Map<String, dynamic>.from(note);
         }).toList();
 
+    // Update SharedPreferences
     await prefs.setString('notes', jsonEncode(updatedNotes));
+
+    // Update Firestore
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      for (var note in updatedNotes) {
+        if (deletedFolderIds.contains(note['folderId'])) {
+          final noteRef = FirebaseFirestore.instance
+              .collection('notes')
+              .doc(note['id']);
+          batch.update(noteRef, {
+            'folderId': FieldValue.delete(),
+            'folderColor': FieldValue.delete(),
+            'folderName': FieldValue.delete(),
+            'updatedAt': DateTime.now().toIso8601String(),
+          });
+        }
+      }
+      await batch.commit();
+    } catch (e) {
+      print('Error updating Firestore: $e');
+      // Continue even if Firestore update fails - local changes are saved
+    }
   }
 
   void _toggleSelectFolder(String id) {
@@ -487,25 +536,32 @@ class _FoldersState extends State<Folders> {
                               ),
                               trailing:
                                   isSelecting
-                                      ? IconButton(
-                                        icon: const Icon(Icons.edit, size: 20),
-                                        onPressed:
-                                            () =>
-                                                _showRenameFolderDialog(folder),
+                                      ? Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.edit,
+                                              size: 20,
+                                            ),
+                                            onPressed:
+                                                () => _showRenameFolderDialog(
+                                                  folder,
+                                                ),
+                                          ),
+                                          if (isSelected)
+                                            Icon(
+                                              Icons.check_circle,
+                                              color:
+                                                  Theme.of(
+                                                    context,
+                                                  ).colorScheme.primary,
+                                              size: 24,
+                                            ),
+                                        ],
                                       )
                                       : null,
                             ),
-
-                            if (isSelected)
-                              Positioned(
-                                top: 8,
-                                right: 8,
-                                child: Icon(
-                                  Icons.check_circle,
-                                  color: Theme.of(context).colorScheme.primary,
-                                  size: 24,
-                                ),
-                              ),
                           ],
                         ),
                       ),
@@ -551,19 +607,15 @@ class _FoldersState extends State<Folders> {
             ),
           ),
           Divider(thickness: 2, color: Theme.of(context).colorScheme.onSurface),
-          _buildDrawerItem(Icons.note, 'Notes', '/notes'),
-          _buildDrawerItem(Icons.alarm, 'Reminders', '/reminders'),
+          _drawerItem(Icons.note, 'Notes', '/notes'),
+          _drawerItem(Icons.alarm, 'Reminders', '/reminders'),
           Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
-          _buildDrawerItem(Icons.label, 'Labels', '/labels'),
+          _drawerItem(Icons.label, 'Labels', '/labels'),
           Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
-          _buildDrawerItem(Icons.folder, 'Folders', '/folders', selected: true),
-          _buildDrawerItem(Icons.archive, 'Archive', '/archive'),
-          _buildDrawerItem(Icons.delete, 'Recycle Bin', '/deleted'),
-          _buildDrawerItem(
-            Icons.settings,
-            'Account Settings',
-            '/accountsettings',
-          ),
+          _drawerItem(Icons.folder, 'Folders', '/folders', selected: true),
+          _drawerItem(Icons.archive, 'Archive', '/archive'),
+          _drawerItem(Icons.delete, 'Recycle Bin', '/deleted'),
+          _drawerItem(Icons.settings, 'Account Settings', '/accountsettings'),
           Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
           ListTile(
             leading: Icon(
@@ -583,7 +635,7 @@ class _FoldersState extends State<Folders> {
     );
   }
 
-  ListTile _buildDrawerItem(
+  ListTile _drawerItem(
     IconData icon,
     String title,
     String route, {
@@ -614,24 +666,72 @@ class _FoldersState extends State<Folders> {
               ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
               : null,
       onTap: () async {
-        if (route != '/accountsettings') {
-          final isComplete = await ProfileService.isProfileComplete();
-          if (!isComplete) {
-            if (!mounted) return;
-            Navigator.pushNamed(context, '/accountsettings');
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Please complete your profile setup first.',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onErrorContainer,
+        // Skip profile check for account settings and logout
+        if (route == '/accountsettings' || route == '/logout') {
+          Navigator.pushNamed(context, route);
+          return;
+        }
+
+        // Skip profile check for basic features
+        if (route == '/notes' ||
+            route == '/reminders' ||
+            route == '/labels' ||
+            route == '/folders' ||
+            route == '/archive' ||
+            route == '/deleted') {
+          Navigator.pushNamed(context, route);
+          return;
+        }
+
+        // For other features that might need profile completion
+        final isComplete = await ProfileService.isProfileComplete();
+        if (!isComplete) {
+          if (!mounted) return;
+
+          // Show dialog instead of forcing navigation
+          final shouldGoToSettings = await showDialog<bool>(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: Text(
+                    'Complete Profile Setup',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
+                  content: Text(
+                    'Would you like to complete your profile setup now?',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text(
+                        'Later',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text(
+                        'Complete Setup',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                backgroundColor: Theme.of(context).colorScheme.errorContainer,
-              ),
-            );
-            return;
+          );
+
+          if (shouldGoToSettings == true) {
+            Navigator.pushNamed(context, '/accountsettings');
           }
+          return;
         }
         Navigator.pushNamed(context, route);
       },

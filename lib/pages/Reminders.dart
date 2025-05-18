@@ -188,24 +188,17 @@ class _RemindersState extends State<Reminders> {
             ),
           ),
           Divider(thickness: 2, color: Theme.of(context).colorScheme.onSurface),
-          _buildDrawerItem(Icons.note, 'Notes', '/notes'),
-          _buildDrawerItem(
-            Icons.alarm,
-            'Reminders',
-            '/reminders',
-            selected: true,
-          ),
+          _drawerItem(Icons.note, 'Notes', '/notes'),
+          _drawerItem(Icons.alarm, 'Reminders', '/reminders', selected: true),
           Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
-          _buildDrawerItem(Icons.label, 'Labels', '/labels'),
+          _drawerItem(Icons.label, 'Labels', '/labels'),
           Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
-          _buildDrawerItem(Icons.folder, 'Folders', '/folders'),
-          _buildDrawerItem(Icons.archive, 'Archive', '/archive'),
-          _buildDrawerItem(Icons.delete, 'Recycle Bin', '/deleted'),
-          _buildDrawerItem(
-            Icons.settings,
-            'Account Settings',
-            '/accountsettings',
-          ),
+          _drawerItem(Icons.folder, 'Folders', '/folders'),
+          Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
+          _drawerItem(Icons.archive, 'Archive', '/archive'),
+          Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
+          _drawerItem(Icons.delete, 'Recycle Bin', '/deleted'),
+          _drawerItem(Icons.settings, 'Account Settings', '/accountsettings'),
           Divider(thickness: 1, color: Theme.of(context).colorScheme.onSurface),
           ListTile(
             leading: Icon(
@@ -276,7 +269,7 @@ class _RemindersState extends State<Reminders> {
     );
   }
 
-  ListTile _buildDrawerItem(
+  ListTile _drawerItem(
     IconData icon,
     String title,
     String route, {
@@ -294,6 +287,7 @@ class _RemindersState extends State<Reminders> {
         title,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           fontSize: 13,
+          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
           color:
               selected
                   ? Theme.of(context).colorScheme.primary
@@ -306,24 +300,72 @@ class _RemindersState extends State<Reminders> {
               ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
               : null,
       onTap: () async {
-        if (route != '/accountsettings') {
-          final isComplete = await ProfileService.isProfileComplete();
-          if (!isComplete) {
-            if (!mounted) return;
-            Navigator.pushNamed(context, '/accountsettings');
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Please complete your profile setup first.',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onErrorContainer,
+        // Skip profile check for account settings and logout
+        if (route == '/accountsettings' || route == '/logout') {
+          Navigator.pushNamed(context, route);
+          return;
+        }
+
+        // Skip profile check for basic features
+        if (route == '/notes' ||
+            route == '/reminders' ||
+            route == '/labels' ||
+            route == '/folders' ||
+            route == '/archive' ||
+            route == '/deleted') {
+          Navigator.pushNamed(context, route);
+          return;
+        }
+
+        // For other features that might need profile completion
+        final isComplete = await ProfileService.isProfileComplete();
+        if (!isComplete) {
+          if (!mounted) return;
+
+          // Show dialog instead of forcing navigation
+          final shouldGoToSettings = await showDialog<bool>(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: Text(
+                    'Complete Profile Setup',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
+                  content: Text(
+                    'Would you like to complete your profile setup now?',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text(
+                        'Later',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text(
+                        'Complete Setup',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                backgroundColor: Theme.of(context).colorScheme.errorContainer,
-              ),
-            );
-            return;
+          );
+
+          if (shouldGoToSettings == true) {
+            Navigator.pushNamed(context, '/accountsettings');
           }
+          return;
         }
         Navigator.pushNamed(context, route);
       },
@@ -519,7 +561,7 @@ class _RemindersState extends State<Reminders> {
                           padding: EdgeInsets.all(padding),
                           child: LayoutBuilder(
                             builder: (context, constraints) {
-                              return Container(
+                              return SizedBox(
                                 height: isLandscape ? 200 : 300,
                                 child: SingleChildScrollView(
                                   physics: const NeverScrollableScrollPhysics(),

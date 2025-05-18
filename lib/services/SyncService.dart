@@ -77,9 +77,22 @@ class SyncService {
       print('Sync error: $e');
       print('Stack trace: $stackTrace');
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Sync failed: $e',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
       }
       _hideLoadingSpinner(context);
     } finally {
@@ -114,9 +127,24 @@ class SyncService {
           print('AutoSync error: $e');
           print('Stack trace: $stackTrace');
           if (overlayContext.mounted) {
-            ScaffoldMessenger.of(
-              overlayContext,
-            ).showSnackBar(SnackBar(content: Text('Auto-sync failed: $e')));
+            ScaffoldMessenger.of(overlayContext).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Auto-sync failed: $e',
+                  style: TextStyle(
+                    color:
+                        Theme.of(overlayContext).colorScheme.onErrorContainer,
+                  ),
+                ),
+                backgroundColor:
+                    Theme.of(overlayContext).colorScheme.errorContainer,
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.all(8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            );
           }
         }
         _hideLoadingSpinner(overlayContext);
@@ -212,13 +240,28 @@ class SyncService {
       print('Local notes before merge: ${jsonEncode(localNotes)}');
 
       final Map<String, dynamic> mergedNotesMap = {};
+
+      // First add local notes to preserve folder information
       for (var note in localNotes) {
         if (note['id'] != null) {
           mergedNotesMap[note['id']] = note;
         }
       }
+
+      // Then merge Firestore notes, preserving folder information if it exists locally
       for (var note in firestoreNotes) {
-        mergedNotesMap[note['id']] = note;
+        final noteId = note['id'];
+        final localNote = mergedNotesMap[noteId];
+
+        if (localNote != null) {
+          // If local note has folder info, preserve it
+          if (localNote['folderId'] != null) {
+            note['folderId'] = localNote['folderId'];
+            note['folderColor'] = localNote['folderColor'];
+            note['folderName'] = localNote['folderName'];
+          }
+        }
+        mergedNotesMap[noteId] = note;
       }
 
       final mergedNotes = mergedNotesMap.values.toList();

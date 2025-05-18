@@ -11,18 +11,40 @@ class ProfileService {
     final isGoogleUser = user.providerData.any(
       (info) => info.providerId == 'google.com',
     );
-    final isNameVerified = prefs.getBool('isNameVerified') ?? isGoogleUser;
-    final isRoleSelected = prefs.getBool('isRoleSelected') ?? false;
-    final isIdVerified = prefs.getBool('isIdVerified') ?? false;
-    final isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
 
+    // For Google users, we only need role and ID verification
     if (isGoogleUser) {
-      return isRoleSelected && isIdVerified && !isFirstTimeUser;
-    } else {
-      return isNameVerified &&
-          isRoleSelected &&
-          isIdVerified &&
-          !isFirstTimeUser;
+      final isRoleSelected = prefs.getBool('isRoleSelected') ?? false;
+      final isIdVerified = prefs.getBool('isIdVerified') ?? false;
+      final isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
+
+      // If it's a first-time user, we don't require profile completion yet
+      if (isFirstTimeUser) return true;
+
+      return isRoleSelected && isIdVerified;
     }
+    // For email/password users, we need name verification as well
+    else {
+      final isNameVerified = prefs.getBool('isNameVerified') ?? false;
+      final isRoleSelected = prefs.getBool('isRoleSelected') ?? false;
+      final isIdVerified = prefs.getBool('isIdVerified') ?? false;
+      final isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
+
+      // If it's a first-time user, we don't require profile completion yet
+      if (isFirstTimeUser) return true;
+
+      return isNameVerified && isRoleSelected && isIdVerified;
+    }
+  }
+
+  static Future<void> saveProfileCompletionStatus({
+    required bool isNameVerified,
+    required bool isRoleSelected,
+    required bool isIdVerified,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isNameVerified', isNameVerified);
+    await prefs.setBool('isRoleSelected', isRoleSelected);
+    await prefs.setBool('isIdVerified', isIdVerified);
   }
 }

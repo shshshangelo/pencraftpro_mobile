@@ -280,6 +280,9 @@ class _AccountSettingsState extends State<AccountSettings> {
             ),
           ),
           backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
       return;
@@ -305,10 +308,15 @@ class _AccountSettingsState extends State<AccountSettings> {
             content: Text(
               'Profile picture updated successfully.',
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSecondaryContainer,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
               ),
             ),
-            backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
       }
@@ -328,6 +336,9 @@ class _AccountSettingsState extends State<AccountSettings> {
             ),
           ),
           backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
       return;
@@ -352,10 +363,15 @@ class _AccountSettingsState extends State<AccountSettings> {
             content: Text(
               'Profile picture updated successfully.',
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSecondaryContainer,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
               ),
             ),
-            backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
       }
@@ -458,10 +474,13 @@ class _AccountSettingsState extends State<AccountSettings> {
           content: Text(
             'Profile photo removed successfully.',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
             ),
           ),
-          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
     }
@@ -840,6 +859,9 @@ class _AccountSettingsState extends State<AccountSettings> {
             ),
           ),
           backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
       return;
@@ -933,6 +955,9 @@ class _AccountSettingsState extends State<AccountSettings> {
             ),
           ),
           backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
       return;
@@ -1098,7 +1123,11 @@ class _AccountSettingsState extends State<AccountSettings> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_fullName.isEmpty && !_isGoogleUser && !_isFirstTimeUser) {
+    // Only show "No data available" if we're not in the middle of profile setup
+    if (_fullName.isEmpty &&
+        !_isGoogleUser &&
+        !_isFirstTimeUser &&
+        _isNameVerified) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1180,10 +1209,7 @@ class _AccountSettingsState extends State<AccountSettings> {
                 color: Theme.of(context).colorScheme.onSurface,
               ),
               ListTile(
-                leading: Icon(
-                  Icons.logout,
-                  color: Theme.of(context).colorScheme.error,
-                ),
+                leading: Icon(Icons.logout),
                 title: Text(
                   'Logout',
                   style: TextStyle(
@@ -1355,7 +1381,7 @@ class _AccountSettingsState extends State<AccountSettings> {
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
-                    'Full Name is linked to your Google account. No need to update.',
+                    'Full Name is linked to your Google account already.',
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1702,11 +1728,13 @@ class _AccountSettingsState extends State<AccountSettings> {
           content: Text(
             'Role is already selected and cannot be changed.',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              color: Theme.of(context).colorScheme.onErrorContainer,
             ),
           ),
-          backgroundColor:
-              Theme.of(context).colorScheme.surfaceContainerHighest,
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
       return;
@@ -2005,10 +2033,13 @@ class _AccountSettingsState extends State<AccountSettings> {
           content: Text(
             'Profile picture updated successfully.',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
             ),
           ),
-          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
     } catch (e) {

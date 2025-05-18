@@ -43,8 +43,19 @@ class _EmailVerificationState extends State<EmailVerification> {
               (route) => false,
             );
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Too many failed attempts. Please log in again.'),
+              SnackBar(
+                content: Text(
+                  'Too many failed attempts. Please log in again.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
+                backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.all(8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             );
           }
@@ -73,7 +84,20 @@ class _EmailVerificationState extends State<EmailVerification> {
         timer.cancel();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Unauthorized or session expired.")),
+            SnackBar(
+              content: Text(
+                "Unauthorized or session expired.",
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                ),
+              ),
+              backgroundColor: Theme.of(context).colorScheme.errorContainer,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
           );
           Navigator.pushReplacement(
             context,
@@ -108,7 +132,20 @@ class _EmailVerificationState extends State<EmailVerification> {
     if (user == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unauthorized access to this account.')),
+          SnackBar(
+            content: Text(
+              'Unauthorized access to this account.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         );
         Navigator.pushReplacement(
           context,
@@ -122,14 +159,40 @@ class _EmailVerificationState extends State<EmailVerification> {
       await user.sendEmailVerification();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Verification email sent.')),
+          SnackBar(
+            content: Text(
+              'Verification email sent.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to send email: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to send email: $e.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) {
@@ -158,8 +221,19 @@ class _EmailVerificationState extends State<EmailVerification> {
     if (_auth.currentUser == null) {
       Future.microtask(() {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unauthorized access. Please log in again.'),
+          SnackBar(
+            content: Text(
+              'Unauthorized access. Please log in again.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
         Navigator.pushReplacement(
@@ -232,7 +306,7 @@ class _EmailVerificationState extends State<EmailVerification> {
               ),
               const SizedBox(height: 16),
               Text(
-                'Didn’t receive it? Check spam or try resending.',
+                "Didn't receive it? Check spam or try resending.",
                 style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                 textAlign: TextAlign.center,
               ),

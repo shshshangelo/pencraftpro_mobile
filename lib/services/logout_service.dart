@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pencraftpro/services/SyncService.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Future<bool> isActuallyOnline() async {
   try {
@@ -26,16 +27,8 @@ Future<void> showLogoutDialog(BuildContext context) async {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor:
-                  Theme.of(
-                    context,
-                  ).colorScheme.secondary, // Use theme's secondary color
-              foregroundColor:
-                  Theme.of(
-                    context,
-                  ).colorScheme.onSecondary, // Use theme's onSecondary color
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              textStyle: const TextStyle(fontSize: 16),
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
             ),
             child: const Text('Logout'),
             onPressed: () => Navigator.pop(context, true),
@@ -50,34 +43,96 @@ Future<void> showLogoutDialog(BuildContext context) async {
     if (!online) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
+          content: Text(
             'You need to be online first before logging out to ensure that all your PenCraft Pro notes are synced.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
           ),
-          backgroundColor:
-              Theme.of(context).colorScheme.error, // Use theme's error color
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
       return;
     }
 
-    await SyncService.clearLocalDataOnLogout();
-    await FirebaseAuth.instance.signOut();
+    try {
+      // Save email, remember me status, labels and folders before clearing
+      final prefs = await SharedPreferences.getInstance();
+      final savedEmail = prefs.getString('email');
+      final rememberMe = prefs.getBool('rememberMe') ?? false;
+      final labels = prefs.getString('labels');
+      final folders = prefs.getString('folders');
 
-    if (context.mounted) {
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        '/login',
-        (Route<dynamic> route) => false,
-        arguments: {'showWelcomeBack': true},
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Logged out successfully.'),
-          backgroundColor:
-              Theme.of(
-                context,
-              ).colorScheme.primary, // Use theme's primary color
-        ),
-      );
+      // Clear all local data
+      await SyncService.clearLocalDataOnLogout();
+
+      // Clear SharedPreferences
+      await prefs.clear();
+
+      // Restore email and remember me if it was enabled
+      if (rememberMe && savedEmail != null) {
+        await prefs.setString('email', savedEmail);
+        await prefs.setBool('rememberMe', true);
+      }
+
+      // Restore labels and folders
+      if (labels != null) {
+        await prefs.setString('labels', labels);
+      }
+      if (folders != null) {
+        await prefs.setString('folders', folders);
+      }
+
+      // Sign out from Firebase
+      await FirebaseAuth.instance.signOut();
+
+      if (context.mounted) {
+        // Navigate to login screen and remove all previous routes
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/login',
+          (Route<dynamic> route) => false,
+          arguments: {'showWelcomeBack': true},
+        );
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Logged out successfully.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error during logout: ${e.toString()}',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
     }
   }
 }

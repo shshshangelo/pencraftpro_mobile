@@ -235,78 +235,92 @@ class _ViewLabelPageState extends State<ViewLabelPage> {
               final checklistItems =
                   item['checklistItems'] as List<dynamic>? ?? [];
               final hasChecklist = checklistItems.isNotEmpty;
+              final hasText = (item['text'] ?? '').toString().trim().isNotEmpty;
+              List<Widget> children = [];
 
-              if (hasChecklist) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children:
-                      checklistItems
-                          .where(
-                            (task) => (task['text'] ?? '').trim().isNotEmpty,
-                          )
-                          .map((task) {
-                            final checked = task['checked'] ?? false;
-                            return Row(
-                              children: [
-                                Checkbox(
-                                  value: checked,
-                                  onChanged: null,
-                                  activeColor:
-                                      Theme.of(context).colorScheme.primary,
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    task['text'] ?? '',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium?.copyWith(
-                                      fontSize: 14,
-                                      fontFamily: widget.fontFamily ?? 'Roboto',
-                                      decoration:
-                                          checked
-                                              ? TextDecoration.lineThrough
-                                              : null,
-                                      color:
-                                          Theme.of(
-                                            context,
-                                          ).textTheme.bodyMedium?.color,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            );
-                          })
-                          .toList(),
-                );
-              } else {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
-                  child: Text(
-                    item['text'] ?? '',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize:
-                          (item['fontSize'] != null)
-                              ? (item['fontSize'] as num).toDouble()
-                              : 16,
-                      fontFamily: widget.fontFamily ?? 'Roboto',
-                      fontWeight:
-                          (item['bold'] == true)
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                      fontStyle:
-                          (item['italic'] == true)
-                              ? FontStyle.italic
-                              : FontStyle.normal,
-                      decoration: TextDecoration.combine([
-                        if (item['underline'] == true) TextDecoration.underline,
-                        if (item['strikethrough'] == true)
-                          TextDecoration.lineThrough,
-                      ]),
-                      color: Theme.of(context).textTheme.bodyMedium?.color,
+              if (hasText) {
+                children.add(
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: Text(
+                      item['text'] ?? '',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontSize:
+                            (item['fontSize'] != null)
+                                ? (item['fontSize'] as num).toDouble()
+                                : 16,
+                        fontFamily:
+                            item['fontFamily'] ?? widget.fontFamily ?? 'Roboto',
+                        fontWeight:
+                            item['bold'] == true
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                        fontStyle:
+                            item['italic'] == true
+                                ? FontStyle.italic
+                                : FontStyle.normal,
+                        decoration: TextDecoration.combine([
+                          if (item['underline'] == true)
+                            TextDecoration.underline,
+                          if (item['strikethrough'] == true)
+                            TextDecoration.lineThrough,
+                        ]),
+                        color: Theme.of(context).textTheme.bodyMedium?.color,
+                      ),
                     ),
                   ),
                 );
               }
+
+              if (hasChecklist) {
+                children.add(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children:
+                        checklistItems
+                            .where(
+                              (task) => (task['text'] ?? '').trim().isNotEmpty,
+                            )
+                            .map((task) {
+                              final checked = task['checked'] ?? false;
+                              return Row(
+                                children: [
+                                  Checkbox(
+                                    value: checked,
+                                    onChanged: null,
+                                    activeColor:
+                                        Theme.of(context).colorScheme.primary,
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      task['text'] ?? '',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium?.copyWith(
+                                        fontSize: 14,
+                                        decoration:
+                                            checked
+                                                ? TextDecoration.lineThrough
+                                                : null,
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).textTheme.bodyMedium?.color,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            })
+                            .toList(),
+                  ),
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: children,
+              );
             }),
             if (widget.voiceNote != null)
               Column(

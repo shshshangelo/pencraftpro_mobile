@@ -49,7 +49,6 @@ class _LoginState extends State<Login> {
 
   Future<void> _loadSavedEmail() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isFirstTimeUser', true);
     final savedEmail = prefs.getString('email') ?? '';
     final rememberMe = prefs.getBool('rememberMe') ?? false;
     setState(() {
@@ -113,9 +112,22 @@ class _LoginState extends State<Login> {
               break;
           }
         }
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(errorMessage)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$errorMessage.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
       } finally {
         if (mounted) setState(() => _isLoading = false);
       }
@@ -203,9 +215,20 @@ class _LoginState extends State<Login> {
             break;
         }
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(errorMessage)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$errorMessage.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isGoogleLoading = false);
     }
@@ -341,7 +364,10 @@ class _LoginState extends State<Login> {
         children: [
           Checkbox(
             value: _rememberMe,
-            onChanged: (value) => setState(() => _rememberMe = value ?? false),
+            onChanged: (value) {
+              setState(() => _rememberMe = value ?? false);
+              _saveEmail();
+            },
           ),
           Text('Remember me', style: Theme.of(context).textTheme.bodyMedium),
         ],

@@ -27,6 +27,7 @@ import 'FullScreenImageViewer.dart';
 import '../notes/FullScreenGallery.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'dart:typed_data';
 
 class AddNotePage extends StatefulWidget {
   final String? noteId;
@@ -103,7 +104,7 @@ class _AddNotePageState extends State<AddNotePage> {
   bool _isArchived = false;
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
-  int _notificationIdCounter = 0;
+  final int _notificationIdCounter = 0;
   FontWeight _selectedFontWeight = FontWeight.normal;
   bool _isItalic = false;
   bool _isUnderline = false;
@@ -148,6 +149,11 @@ class _AddNotePageState extends State<AddNotePage> {
 
   // Track the initial state of the note for change detection
   Map<String, dynamic>? _initialNoteState;
+
+  // Add new font family variables for different elements
+  // String _titleFontFamily = 'Roboto';
+  //String _contentFontFamily = 'Roboto';
+  //String _checklistFontFamily = 'Roboto';
 
   @override
   void initState() {
@@ -353,17 +359,34 @@ class _AddNotePageState extends State<AddNotePage> {
   Future<void> _loadFolderName(String folderId) async {
     try {
       final folders = await FolderService.loadFolders();
-      final matchedFolder = folders.firstWhere(
-        (f) => f.id.toString() == folderId,
-        orElse: () => Folder(id: folderId, name: 'Unknown Folder'),
-      );
+      Folder? matchedFolder;
+      try {
+        matchedFolder = folders.firstWhere((f) => f.id.toString() == folderId);
+      } catch (e) {
+        matchedFolder = null;
+      }
 
-      setState(() {
-        _selectedFolderId = matchedFolder.id.toString();
-        _selectedFolderName = matchedFolder.name;
-      });
+      if (matchedFolder == null) {
+        // If folder doesn't exist, clear folder information
+        setState(() {
+          _selectedFolderId = null;
+          _selectedFolderName = null;
+        });
+        // Save the note without folder information
+        await _saveNoteToFirestore();
+      } else {
+        setState(() {
+          _selectedFolderId = matchedFolder!.id.toString();
+          _selectedFolderName = matchedFolder.name;
+        });
+      }
     } catch (e) {
       debugPrint('Failed to load folder: $e');
+      // Clear folder information on error
+      setState(() {
+        _selectedFolderId = null;
+        _selectedFolderName = null;
+      });
     }
   }
 
@@ -563,8 +586,16 @@ class _AddNotePageState extends State<AddNotePage> {
       debugPrint('⚠️ Note saved locally but Firestore sync pending: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: Colors.red,
+          content: Text(
+            'Error: ${e.toString()}.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
     }
@@ -732,7 +763,18 @@ class _AddNotePageState extends State<AddNotePage> {
     await _saveNoteToFirestore();
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Note moved to folder: ${matchedFolder.name}.')),
+      SnackBar(
+        content: Text(
+          'Note moved to folder: ${matchedFolder.name}.',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
+        ),
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
     );
   }
 
@@ -793,9 +835,19 @@ class _AddNotePageState extends State<AddNotePage> {
         });
         await _scheduleNotification(reminderDateTime);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Reminder has been successfully set.'),
-            backgroundColor: Colors.green,
+          SnackBar(
+            content: Text(
+              'Reminder has been successfully set.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
       }
@@ -804,14 +856,58 @@ class _AddNotePageState extends State<AddNotePage> {
 
   Future<void> _scheduleNotification(DateTime dateTime) async {
     try {
+      // Initialize timezone data
+      tz.initializeTimeZones();
+
+      // Get the Philippines timezone
+      final philippines = tz.getLocation('Asia/Manila');
+
+      // Convert the reminder time to Philippines timezone
+      final scheduledDate = tz.TZDateTime.from(dateTime, philippines);
+      final now = tz.TZDateTime.now(philippines);
+
+      debugPrint('⏰ Current time: $now');
+      debugPrint('⏰ Scheduled time: $scheduledDate');
+
+      if (scheduledDate.isBefore(now)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Cannot schedule notification for past time.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+        return;
+      }
+
+      // Request notification permission
       final notificationPermission = await Permission.notification.request();
       debugPrint('📱 Notification permission status: $notificationPermission');
 
       if (!notificationPermission.isGranted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Notification permission denied.'),
-            backgroundColor: Colors.red,
+            content: Text(
+              'Notification permission denied.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
             action:
                 notificationPermission.isPermanentlyDenied
                     ? SnackBarAction(
@@ -825,11 +921,9 @@ class _AddNotePageState extends State<AddNotePage> {
         return;
       }
 
+      // Request exact alarm permission for Android 12+
       final androidInfo = await DeviceInfoPlugin().androidInfo;
-      final isAndroid12OrHigher = androidInfo.version.sdkInt >= 31;
-      debugPrint('📱 Android SDK version: ${androidInfo.version.sdkInt}');
-
-      if (isAndroid12OrHigher) {
+      if (androidInfo.version.sdkInt >= 31) {
         final scheduleExactAlarmStatus =
             await Permission.scheduleExactAlarm.request();
         debugPrint(
@@ -838,36 +932,28 @@ class _AddNotePageState extends State<AddNotePage> {
 
         if (!scheduleExactAlarmStatus.isGranted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
                 'Exact Alarm permission denied. Cannot schedule notification.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
               ),
-              backgroundColor: Colors.red,
+              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
           );
           return;
         }
       }
 
-      // Convert to TZDateTime and validate
-      final scheduledDate = tz.TZDateTime.from(dateTime, tz.local);
-      final now = tz.TZDateTime.now(tz.local);
-      debugPrint('⏰ Current time: $now');
-      debugPrint('⏰ Scheduled time: $scheduledDate');
-
-      if (scheduledDate.isBefore(now)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cannot schedule notification for past time.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
       // Create notification details
       const androidDetails = AndroidNotificationDetails(
-        'note_reminder',
+        'note_reminder_channel',
         'Note Reminders',
         channelDescription: 'Notifications for note reminders',
         importance: Importance.max,
@@ -876,39 +962,77 @@ class _AddNotePageState extends State<AddNotePage> {
         playSound: true,
         category: AndroidNotificationCategory.reminder,
         visibility: NotificationVisibility.public,
+        icon: '@mipmap/ic_launcher',
+        largeIcon: DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
+        styleInformation: BigTextStyleInformation(''),
+        fullScreenIntent: true,
+        showWhen: true,
+        enableLights: true,
+        channelShowBadge: true,
       );
 
       const notificationDetails = NotificationDetails(android: androidDetails);
 
-      // Schedule the notification
-      await _notificationsPlugin.zonedSchedule(
-        _notificationIdCounter++,
-        'Note Reminder',
-        _titleController.text.isNotEmpty
-            ? _titleController.text
-            : 'Untitled Note',
-        scheduledDate,
-        notificationDetails,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.dateAndTime,
-        payload: 'Reminder Notification',
-      );
+      // Generate a unique notification ID
+      final notificationId = dateTime.millisecondsSinceEpoch ~/ 1000;
+
+      // Calculate the delay until the scheduled time
+      final delay = scheduledDate.difference(now);
+
+      // Format the time for the notification
+      final formattedTime = DateFormat('hh:mm a').format(dateTime);
+      final formattedDate = DateFormat('MMM dd, yyyy').format(dateTime);
+
+      // Schedule the notification using a delayed Future
+      Future.delayed(delay, () async {
+        await _notificationsPlugin.show(
+          notificationId,
+          '📝 Reminder: $formattedDate, $formattedTime',
+          _titleController.text.isNotEmpty
+              ? _titleController.text
+              : 'Untitled Note',
+          notificationDetails,
+        );
+      });
 
       debugPrint('✅ Notification scheduled successfully for $scheduledDate');
 
       // Save notification ID for later reference
       final prefs = await SharedPreferences.getInstance();
       final notificationIds = prefs.getStringList('notification_ids') ?? [];
-      notificationIds.add(_notificationIdCounter.toString());
+      notificationIds.add(notificationId.toString());
       await prefs.setStringList('notification_ids', notificationIds);
+
+      // Show confirmation to user
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Reminder set for ${DateFormat('MMM dd, yyyy hh:mm a').format(dateTime)}.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     } catch (e, stackTrace) {
       debugPrint('❌ Error scheduling notification: $e');
       debugPrint('Stack trace: $stackTrace');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to schedule notification: $e'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 5),
+          content: Text(
+            'Failed to schedule notification: $e.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
     }
@@ -917,6 +1041,9 @@ class _AddNotePageState extends State<AddNotePage> {
   // Add this method to initialize notifications
   Future<void> _initializeNotifications() async {
     try {
+      // Initialize timezone data
+      tz.initializeTimeZones();
+
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
       );
@@ -930,6 +1057,23 @@ class _AddNotePageState extends State<AddNotePage> {
       );
 
       debugPrint('📱 Notifications initialized: $initialized');
+
+      // Create notification channel for Android
+      const androidChannel = AndroidNotificationChannel(
+        'note_reminder_channel',
+        'Note Reminders',
+        description: 'Notifications for note reminders',
+        importance: Importance.max,
+        enableVibration: true,
+        playSound: true,
+      );
+
+      // Create the Android notification channel
+      await _notificationsPlugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.createNotificationChannel(androidChannel);
     } catch (e) {
       debugPrint('❌ Error initializing notifications: $e');
     }
@@ -981,7 +1125,10 @@ class _AddNotePageState extends State<AddNotePage> {
     if (!permissionStatus.isGranted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Camera permission denied.'),
+          content: Text(
+            'Camera permission denied.',
+            style: TextStyle(color: Colors.white),
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -1028,7 +1175,10 @@ class _AddNotePageState extends State<AddNotePage> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Gallery permission denied.'),
+          content: Text(
+            'Gallery permission denied.',
+            style: TextStyle(color: Colors.white),
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -1063,6 +1213,83 @@ class _AddNotePageState extends State<AddNotePage> {
   }
 
   Future<void> _recordVoiceNote() async {
+    // Check if there's already a voice note
+    if (_voiceNotePath != null) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              title: const Text('Voice Note Already Exists'),
+              content: const Text(
+                'There is already a voice note attached to this note. Would you like to replace it?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    // Store the old voice note path before clearing
+                    final oldVoiceNotePath = _voiceNotePath;
+
+                    // Delete the existing voice note file
+                    try {
+                      final existingFile = File(_voiceNotePath!);
+                      if (await existingFile.exists()) {
+                        await existingFile.delete();
+                      }
+                      // Clear the voice note path and remove from element order
+                      setState(() {
+                        _voiceNotePath = null;
+                        // Remove the old voice note from element order using the stored path
+                        _elementOrder.removeWhere(
+                          (element) =>
+                              element['type'] == 'voice' &&
+                              element['path'] == oldVoiceNotePath,
+                        );
+                      });
+                      Navigator.pop(context, true);
+                    } catch (e) {
+                      debugPrint('Error deleting existing voice note: $e');
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Error removing existing voice note: $e',
+                            style: TextStyle(
+                              color:
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.onErrorContainer,
+                            ),
+                          ),
+                          backgroundColor:
+                              Theme.of(context).colorScheme.errorContainer,
+                          behavior: SnackBarBehavior.floating,
+                          margin: const EdgeInsets.all(8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      );
+                      Navigator.pop(context, false);
+                    }
+                  },
+                  child: const Text('Replace'),
+                ),
+              ],
+            ),
+      );
+
+      if (confirm != true) {
+        return;
+      }
+    }
+
     final permissionStatus = await Permission.microphone.request();
     if (!permissionStatus.isGranted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1188,8 +1415,18 @@ class _AddNotePageState extends State<AddNotePage> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Voice note recorded.'),
-            backgroundColor: Colors.green,
+            content: Text(
+              'Voice note recorded.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
       } else {
@@ -1199,8 +1436,16 @@ class _AddNotePageState extends State<AddNotePage> {
       timer?.cancel();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to record voice note: $e'),
-          backgroundColor: Colors.red,
+          content: Text(
+            'Failed to record voice note: $e.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
     } finally {
@@ -1231,11 +1476,19 @@ class _AddNotePageState extends State<AddNotePage> {
         _isPlaying = !_isPlaying;
       });
     } catch (e) {
-      debugPrint('Error playing voice note: $e');
+      debugPrint('Error playing voice note: $e.');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error playing voice note: $e'),
-          backgroundColor: Colors.red,
+          content: Text(
+            'Error playing voice note: $e.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
     }
@@ -1290,9 +1543,9 @@ class _AddNotePageState extends State<AddNotePage> {
                             context: context,
                             builder:
                                 (context) => AlertDialog(
-                                  title: const Text('Delete Voice Note?'),
+                                  title: const Text('Remove Voice Note?'),
                                   content: const Text(
-                                    'Are you sure you want to delete this voice note?',
+                                    'Are you sure you want to remove this voice note?',
                                   ),
                                   actions: [
                                     TextButton(
@@ -1300,13 +1553,17 @@ class _AddNotePageState extends State<AddNotePage> {
                                           () => Navigator.pop(context, false),
                                       child: const Text('Cancel'),
                                     ),
-                                    TextButton(
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red,
+                                        foregroundColor:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.onErrorContainer,
+                                      ),
                                       onPressed:
                                           () => Navigator.pop(context, true),
-                                      child: const Text(
-                                        'Delete',
-                                        style: TextStyle(color: Colors.red),
-                                      ),
+                                      child: const Text('Remove'),
                                     ),
                                   ],
                                 ),
@@ -1317,9 +1574,21 @@ class _AddNotePageState extends State<AddNotePage> {
                               _voiceNotePath = null;
                             });
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Voice note deleted.'),
-                                backgroundColor: Colors.black,
+                              SnackBar(
+                                content: Text(
+                                  'Voice note removed.',
+                                  style: TextStyle(
+                                    color:
+                                        Theme.of(context).colorScheme.onError,
+                                  ),
+                                ),
+                                backgroundColor:
+                                    Theme.of(context).colorScheme.error,
+                                behavior: SnackBarBehavior.floating,
+                                margin: const EdgeInsets.all(8),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
                               ),
                             );
                           }
@@ -1413,7 +1682,7 @@ class _AddNotePageState extends State<AddNotePage> {
                                         color:
                                             Theme.of(
                                               context,
-                                            ).colorScheme.onPrimary,
+                                            ).colorScheme.onPrimaryContainer,
                                       ),
                                     ),
                                   ),
@@ -1430,7 +1699,24 @@ class _AddNotePageState extends State<AddNotePage> {
                           });
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Label "$labelName" created.'),
+                              content: Text(
+                                'Label "$labelName" created.',
+                                style: TextStyle(
+                                  color:
+                                      Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimaryContainer,
+                                ),
+                              ),
+                              backgroundColor:
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.primaryContainer,
+                              behavior: SnackBarBehavior.floating,
+                              margin: const EdgeInsets.all(8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                           );
                         }
@@ -1459,7 +1745,24 @@ class _AddNotePageState extends State<AddNotePage> {
                               Navigator.pop(context);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('Label "${label.name}" added.'),
+                                  content: Text(
+                                    'Label "${label.name}" added.',
+                                    style: TextStyle(
+                                      color:
+                                          Theme.of(
+                                            context,
+                                          ).colorScheme.onPrimaryContainer,
+                                    ),
+                                  ),
+                                  backgroundColor:
+                                      Theme.of(
+                                        context,
+                                      ).colorScheme.primaryContainer,
+                                  behavior: SnackBarBehavior.floating,
+                                  margin: const EdgeInsets.all(8),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
                                 ),
                               );
                             },
@@ -1483,9 +1786,17 @@ class _AddNotePageState extends State<AddNotePage> {
     });
     _saveNote();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Note moved to archive.'),
-        backgroundColor: Colors.green,
+      SnackBar(
+        content: Text(
+          'Note moved to archive.',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
+        ),
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -1525,9 +1836,17 @@ class _AddNotePageState extends State<AddNotePage> {
     );
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Note copied.'),
-        backgroundColor: Colors.green,
+      SnackBar(
+        content: Text(
+          'Note copied.',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
+        ),
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -1535,19 +1854,46 @@ class _AddNotePageState extends State<AddNotePage> {
   Future<void> _addCollaborator(String email) async {
     if (widget.noteId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Save the note first before adding collaborators.'),
+        SnackBar(
+          content: Text(
+            'Save the note first before adding collaborators.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
       return;
     }
 
     try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        throw Exception('No authenticated user found.');
+      }
+
       // Normalize email
       final normalizedEmail = email.toLowerCase().trim();
       if (normalizedEmail.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a valid email.')),
+          SnackBar(
+            content: Text(
+              'Please enter a valid email.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         );
         return;
       }
@@ -1555,7 +1901,20 @@ class _AddNotePageState extends State<AddNotePage> {
       // Check if the email is already a collaborator
       if (_collaboratorEmails.contains(normalizedEmail)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('This user is already a collaborator.')),
+          SnackBar(
+            content: Text(
+              'This user is already a collaborator.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         );
         return;
       }
@@ -1569,7 +1928,20 @@ class _AddNotePageState extends State<AddNotePage> {
 
       if (userQuery.docs.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No user found with this email.')),
+          SnackBar(
+            content: Text(
+              'No user found with this email.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         );
         return;
       }
@@ -1596,27 +1968,55 @@ class _AddNotePageState extends State<AddNotePage> {
       final currentCollaboratorEmails = List<String>.from(
         noteData['collaboratorEmails'] ?? [],
       );
+      final collaboratorHistory = List<Map<String, dynamic>>.from(
+        noteData['collaboratorHistory'] ?? [],
+      );
 
       // Add the new collaborator
       currentCollaborators.add(collaboratorUid);
       currentCollaboratorEmails.add(normalizedEmail);
 
-      // Update the note with the new collaborators
-      await noteRef.update({
-        'collaborators': currentCollaborators,
-        'collaboratorEmails': currentCollaboratorEmails,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // Update local state
+      // Update local state immediately
       setState(() {
         _collaboratorEmails.add(normalizedEmail);
       });
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Note shared with $email')));
+      // Update Firestore with the new collaborator and history
+      await noteRef.update({
+        'collaborators': currentCollaborators,
+        'collaboratorEmails': currentCollaboratorEmails,
+        'collaboratorHistory': FieldValue.arrayUnion([
+          {
+            'email': normalizedEmail,
+            'action': 'added',
+            'timestamp': DateTime.now().toIso8601String(),
+            'user': currentUser.email ?? 'Unknown',
+          },
+        ]),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'lastModifiedBy': currentUser.uid,
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Note collaborated with $email',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     } on FirebaseException catch (e) {
+      // Revert local state if Firestore update fails
+      setState(() {
+        _collaboratorEmails.remove(email.toLowerCase());
+      });
+
       String message;
       switch (e.code) {
         case 'permission-denied':
@@ -1628,17 +2028,47 @@ class _AddNotePageState extends State<AddNotePage> {
         default:
           message = 'Failed to add collaborator: ${e.message}';
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Unexpected error: $e')));
+      // Revert local state if any error occurs
+      setState(() {
+        _collaboratorEmails.remove(email.toLowerCase());
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unexpected error: $e',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     }
   }
 
   Future<void> _removeCollaboratorByEmail(String email) async {
+    // Store the current state in case we need to revert
+    final previousCollaboratorEmails = List<String>.from(_collaboratorEmails);
+
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) {
@@ -1691,20 +2121,29 @@ class _AddNotePageState extends State<AddNotePage> {
         return;
       }
 
-      // Remove the collaborator
+      // Update local state immediately
+      setState(() {
+        _collaboratorEmails.remove(email.toLowerCase());
+      });
+
+      // Remove the collaborator from Firestore data
       currentCollaborators.remove(collaboratorUid);
       currentCollaboratorEmails.remove(email.toLowerCase());
 
-      // Update the note
+      // Update Firestore with the removed collaborator and history
       await noteRef.update({
         'collaborators': currentCollaborators,
         'collaboratorEmails': currentCollaboratorEmails,
+        'collaboratorHistory': FieldValue.arrayUnion([
+          {
+            'email': email.toLowerCase(),
+            'action': 'removed',
+            'timestamp': DateTime.now().toIso8601String(),
+            'user': currentUser.email ?? 'Unknown',
+          },
+        ]),
         'updatedAt': FieldValue.serverTimestamp(),
         'lastModifiedBy': currentUser.uid,
-      });
-
-      setState(() {
-        _collaboratorEmails.remove(email.toLowerCase());
       });
 
       // If the current user removed themselves, close the note
@@ -1712,12 +2151,37 @@ class _AddNotePageState extends State<AddNotePage> {
         Navigator.pop(context);
       }
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Removed collaborator: $email')));
-    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to remove collaborator: $e')),
+        SnackBar(
+          content: Text(
+            'Removed collaborator: $email',
+            style: TextStyle(color: Theme.of(context).colorScheme.onError),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+    } catch (e) {
+      // Revert local state if any error occurs
+      setState(() {
+        _collaboratorEmails = previousCollaboratorEmails;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Failed to remove collaborator: $e',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
       );
     }
   }
@@ -1803,7 +2267,7 @@ class _AddNotePageState extends State<AddNotePage> {
       builder: (context) {
         return AlertDialog(
           title: Text(
-            'Share Note',
+            'Collaborate with others',
             style:
                 Theme.of(context).textTheme.titleMedium, // ✅ default size title
           ),
@@ -1832,7 +2296,7 @@ class _AddNotePageState extends State<AddNotePage> {
                 Navigator.pop(context);
                 await _addCollaborator(emailController.text.trim());
               },
-              child: const Text('Share'),
+              child: const Text('Collaborate'),
             ),
           ],
         );
@@ -1846,35 +2310,53 @@ class _AddNotePageState extends State<AddNotePage> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Collaborators'),
-          content:
-              _collaboratorEmails.isEmpty
-                  ? const Text('No collaborators yet.')
-                  : SizedBox(
-                    width: double.maxFinite,
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: _collaboratorEmails.length,
-                      itemBuilder: (context, index) {
-                        final email = _collaboratorEmails[index];
-                        return ListTile(
-                          title: Text(
-                            email,
-                            style: const TextStyle(fontSize: 14),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_collaboratorEmails.isEmpty)
+                const Text('No collaborators yet.')
+              else
+                SizedBox(
+                  width: double.maxFinite,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _collaboratorEmails.length,
+                    itemBuilder: (context, index) {
+                      final email = _collaboratorEmails[index];
+                      return ListTile(
+                        title: Text(
+                          email,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(
+                            Icons.remove_circle,
+                            color: Colors.red,
                           ),
-                          trailing: IconButton(
-                            icon: const Icon(
-                              Icons.remove_circle,
-                              color: Colors.red,
-                            ),
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _confirmRemoveCollaborator(email);
-                            },
-                          ),
-                        );
-                      },
-                    ),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _confirmRemoveCollaborator(email);
+                          },
+                        ),
+                      );
+                    },
                   ),
+                ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: const Text(
+                  'Recent Collaborators',
+                  style: TextStyle(fontSize: 14),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _viewRecentCollaborators();
+                },
+              ),
+            ],
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -1884,6 +2366,94 @@ class _AddNotePageState extends State<AddNotePage> {
         );
       },
     );
+  }
+
+  Future<void> _viewRecentCollaborators() async {
+    try {
+      final noteRef = FirebaseFirestore.instance
+          .collection('notes')
+          .doc(widget.noteId);
+      final noteDoc = await noteRef.get();
+
+      if (!noteDoc.exists) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Note not found.')));
+        return;
+      }
+
+      final noteData = noteDoc.data()!;
+      final collaboratorHistory = List<Map<String, dynamic>>.from(
+        noteData['collaboratorHistory'] ?? [],
+      );
+
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Recent Collaborators'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child:
+                  collaboratorHistory.isEmpty
+                      ? const Text('No collaborator history available.')
+                      : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: collaboratorHistory.length,
+                        itemBuilder: (context, index) {
+                          final entry = collaboratorHistory[index];
+                          final email = entry['email'] as String;
+                          final action = entry['action'] as String;
+                          final timestamp = DateTime.parse(
+                            entry['timestamp'] as String,
+                          );
+                          final user = entry['user'] as String;
+
+                          return ListTile(
+                            leading: Icon(
+                              action == 'added'
+                                  ? Icons.person_add
+                                  : Icons.person_remove,
+                              color:
+                                  action == 'added' ? Colors.green : Colors.red,
+                            ),
+                            title: Text(
+                              email,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            subtitle: Text(
+                              '${action == 'added' ? 'Added' : 'Removed'} by $user\n${DateFormat('MMM dd, yyyy hh:mm a').format(timestamp)}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          );
+                        },
+                      ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Failed to load collaborator history: $e',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+    }
   }
 
   Future<void> _exportNote() async {
@@ -2110,16 +2680,34 @@ class _AddNotePageState extends State<AddNotePage> {
       if (exportSuccessful) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Note exported as PDF: $fileName.pdf'),
-            backgroundColor: Colors.green,
+            content: Text(
+              'Note exported as PDF: $fileName.pdf.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to export PDF: $e'),
-          backgroundColor: Colors.red,
+          content: Text(
+            'Failed to export PDF: $e.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
     }
@@ -2298,7 +2886,7 @@ class _AddNotePageState extends State<AddNotePage> {
                                         Icons.create_new_folder,
                                       ),
                                       title: const Text(
-                                        'New Folder',
+                                        'Add Folder',
                                         style: TextStyle(fontSize: 14),
                                       ),
                                       onTap: () async {
@@ -2322,6 +2910,23 @@ class _AddNotePageState extends State<AddNotePage> {
                                             SnackBar(
                                               content: Text(
                                                 'Folder "$folderName" created.',
+                                                style: TextStyle(
+                                                  color:
+                                                      Theme.of(context)
+                                                          .colorScheme
+                                                          .onPrimaryContainer,
+                                                ),
+                                              ),
+                                              backgroundColor:
+                                                  Theme.of(context)
+                                                      .colorScheme
+                                                      .primaryContainer,
+                                              behavior:
+                                                  SnackBarBehavior.floating,
+                                              margin: const EdgeInsets.all(8),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
                                               ),
                                             ),
                                           );
@@ -2364,7 +2969,57 @@ class _AddNotePageState extends State<AddNotePage> {
                                                 _selectedFolderName =
                                                     folder.name;
                                               });
-                                              await _saveNoteToFirestore();
+
+                                              // Update both Firestore and local storage
+                                              if (widget.noteId != null) {
+                                                // Update Firestore
+                                                final noteRef =
+                                                    FirebaseFirestore.instance
+                                                        .collection('notes')
+                                                        .doc(widget.noteId);
+                                                await noteRef.update({
+                                                  'folderId': folderId,
+                                                  'folderColor':
+                                                      _folderColorMap[folderId]
+                                                          ?.value,
+                                                  'folderName': folder.name,
+                                                  'updatedAt':
+                                                      DateTime.now()
+                                                          .toIso8601String(),
+                                                });
+
+                                                // Update local storage
+                                                final prefs =
+                                                    await SharedPreferences.getInstance();
+                                                final String? notesString =
+                                                    prefs.getString('notes');
+                                                if (notesString != null) {
+                                                  final List<dynamic> notes =
+                                                      jsonDecode(notesString);
+                                                  final noteIndex = notes
+                                                      .indexWhere(
+                                                        (note) =>
+                                                            note['id'] ==
+                                                            widget.noteId,
+                                                      );
+                                                  if (noteIndex != -1) {
+                                                    notes[noteIndex]['folderId'] =
+                                                        folderId;
+                                                    notes[noteIndex]['folderColor'] =
+                                                        _folderColorMap[folderId]
+                                                            ?.value;
+                                                    notes[noteIndex]['folderName'] =
+                                                        folder.name;
+                                                    notes[noteIndex]['updatedAt'] =
+                                                        DateTime.now()
+                                                            .toIso8601String();
+                                                    await prefs.setString(
+                                                      'notes',
+                                                      jsonEncode(notes),
+                                                    );
+                                                  }
+                                                }
+                                              }
                                               Navigator.pop(context);
                                             },
                                           );
@@ -2406,12 +3061,12 @@ class _AddNotePageState extends State<AddNotePage> {
                 ListTile(
                   leading: const Icon(Icons.group),
                   title: const Text(
-                    'Collaboration',
+                    'Collaboration with others',
                     style: TextStyle(fontSize: 14.0),
                   ),
                   onTap: () {
                     Navigator.pop(context);
-                    _openCollaboratorOptions(); // ✅ TAMANG FUNCTION NA
+                    _openCollaboratorOptions();
                   },
                 ),
 
@@ -2591,26 +3246,29 @@ class _AddNotePageState extends State<AddNotePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(width: 8),
-                if (widget.collaboratorEmails != null &&
-                    widget.collaboratorEmails!.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.shade100,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      'Shared Note',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.deepPurple,
+                if (_collaboratorEmails.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 20.0, top: 4.0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'Collaborated Notes',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.deepPurple,
+                        ),
                       ),
                     ),
                   ),
+                const SizedBox(height: 8),
                 TextField(
                   controller: _titleController,
                   autofocus: false,
@@ -2642,15 +3300,17 @@ class _AddNotePageState extends State<AddNotePage> {
                         children: [
                           Expanded(
                             child: GestureDetector(
-                              onTap:
-                                  _setReminder, // Tap text/icon to edit reminder
+                              onTap: _setReminder,
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Icon(
                                     Icons.alarm,
                                     size: 16,
-                                    color: Colors.grey[600],
+                                    color:
+                                        _reminder!.isBefore(DateTime.now())
+                                            ? Colors.red
+                                            : Colors.grey[600],
                                   ),
                                   const SizedBox(width: 4),
                                   Expanded(
@@ -2658,16 +3318,18 @@ class _AddNotePageState extends State<AddNotePage> {
                                       text: TextSpan(
                                         style: TextStyle(
                                           fontSize: 15,
-                                          color: Colors.blue[600],
+                                          color:
+                                              _reminder!.isBefore(
+                                                    DateTime.now(),
+                                                  )
+                                                  ? Colors.red
+                                                  : Colors.blue[600],
                                         ),
                                         children: [
                                           TextSpan(
                                             text: DateFormat(
                                               'MMM dd, yyyy hh:mm a',
                                             ).format(_reminder!),
-                                            style: TextStyle(
-                                              fontStyle: FontStyle.italic,
-                                            ),
                                           ),
                                         ],
                                       ),
@@ -2677,6 +3339,7 @@ class _AddNotePageState extends State<AddNotePage> {
                               ),
                             ),
                           ),
+
                           IconButton(
                             icon: Icon(
                               Icons.close,
@@ -2720,9 +3383,23 @@ class _AddNotePageState extends State<AddNotePage> {
                                 });
                                 await _saveNoteToFirestore();
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Reminder removed.'),
-                                    backgroundColor: Colors.black,
+                                  SnackBar(
+                                    backgroundColor:
+                                        Theme.of(context).colorScheme.error,
+                                    content: Text(
+                                      'Reminder removed.',
+                                      style: TextStyle(
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.onError,
+                                      ),
+                                    ),
+                                    behavior: SnackBarBehavior.floating,
+                                    margin: const EdgeInsets.all(8),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
                                   ),
                                 );
                               }
@@ -2788,9 +3465,20 @@ class _AddNotePageState extends State<AddNotePage> {
                           });
                           await _saveNoteToFirestore();
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Folder removed from note.'),
-                              backgroundColor: Colors.black,
+                            SnackBar(
+                              content: Text(
+                                'Folder removed from note.',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onError,
+                                ),
+                              ),
+                              backgroundColor:
+                                  Theme.of(context).colorScheme.error,
+                              behavior: SnackBarBehavior.floating,
+                              margin: const EdgeInsets.all(8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                           );
                         }
@@ -2887,9 +3575,25 @@ class _AddNotePageState extends State<AddNotePage> {
                                                 SnackBar(
                                                   content: Text(
                                                     "Label '$updated' updated.",
+                                                    style: TextStyle(
+                                                      color: Colors.white,
+                                                    ),
                                                   ),
                                                   backgroundColor:
-                                                      Colors.orange,
+                                                      Theme.of(
+                                                        context,
+                                                      ).colorScheme.primary,
+                                                  behavior:
+                                                      SnackBarBehavior.floating,
+                                                  margin: const EdgeInsets.all(
+                                                    8,
+                                                  ),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                  ),
                                                 ),
                                               );
                                             }
@@ -2926,10 +3630,10 @@ class _AddNotePageState extends State<AddNotePage> {
                                                 builder:
                                                     (context) => AlertDialog(
                                                       title: const Text(
-                                                        'Confirm Delete',
+                                                        'Confirm Remove',
                                                       ),
                                                       content: Text(
-                                                        'Are you sure you want to delete "$label"?',
+                                                        'Are you sure you want to remove "$label"?',
                                                       ),
                                                       actions: [
                                                         TextButton(
@@ -2959,7 +3663,7 @@ class _AddNotePageState extends State<AddNotePage> {
                                                                     true,
                                                                   ),
                                                           child: const Text(
-                                                            'Delete',
+                                                            'Remove',
                                                           ),
                                                         ),
                                                       ],
@@ -2976,9 +3680,28 @@ class _AddNotePageState extends State<AddNotePage> {
                                                   SnackBar(
                                                     content: Text(
                                                       "Label '$label' removed.",
+                                                      style: TextStyle(
+                                                        color:
+                                                            Theme.of(context)
+                                                                .colorScheme
+                                                                .onError,
+                                                      ),
                                                     ),
                                                     backgroundColor:
-                                                        Colors.black,
+                                                        Theme.of(
+                                                          context,
+                                                        ).colorScheme.error,
+                                                    behavior:
+                                                        SnackBarBehavior
+                                                            .floating,
+                                                    margin:
+                                                        const EdgeInsets.all(8),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                    ),
                                                   ),
                                                 );
                                               }
@@ -3006,7 +3729,8 @@ class _AddNotePageState extends State<AddNotePage> {
                   ),
                   style: TextStyle(
                     fontSize: _contentFontSize,
-                    fontFamily: _selectedFontFamily,
+                    fontFamily:
+                        _selectedFontFamily, // Only content uses selected font
                     fontWeight: _selectedFontWeight,
                     fontStyle: _isItalic ? FontStyle.italic : FontStyle.normal,
                     decoration:
@@ -3068,7 +3792,7 @@ class _AddNotePageState extends State<AddNotePage> {
                                       context: context,
                                       builder:
                                           (context) => AlertDialog(
-                                            title: const Text('Delete Image?'),
+                                            title: const Text('Remove Image?'),
                                             content: const Text(
                                               'Are you sure you want to remove this image?',
                                             ),
@@ -3084,7 +3808,7 @@ class _AddNotePageState extends State<AddNotePage> {
                                                 style: ElevatedButton.styleFrom(
                                                   backgroundColor: Colors.red,
                                                 ),
-                                                child: const Text('Delete'),
+                                                child: const Text('Remove'),
                                                 onPressed:
                                                     () => Navigator.of(
                                                       context,
@@ -3099,6 +3823,32 @@ class _AddNotePageState extends State<AddNotePage> {
                                         _imagePaths.remove(element['path']);
                                         _elementOrder.remove(element);
                                       });
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Image removed.',
+                                            style: TextStyle(
+                                              color:
+                                                  Theme.of(
+                                                    context,
+                                                  ).colorScheme.onError,
+                                            ),
+                                          ),
+                                          backgroundColor:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.error,
+                                          behavior: SnackBarBehavior.floating,
+                                          margin: const EdgeInsets.all(8),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                        ),
+                                      );
                                     }
                                   },
                                 ),
@@ -3112,8 +3862,6 @@ class _AddNotePageState extends State<AddNotePage> {
                     case 'checklist':
                       final index = element['index'];
                       if (index < _checklistItems.length) {
-                        // Show all checklist items, but track if they're empty
-                        // Ensure controller exists
                         _checklistControllers.putIfAbsent(index, () {
                           final controller = TextEditingController(
                             text: _checklistItems[index]['text'],
@@ -3135,7 +3883,6 @@ class _AddNotePageState extends State<AddNotePage> {
                             onChanged: (text) {
                               setState(() {
                                 _checklistItems[index]['text'] = text;
-                                // Remove empty checklist items from element order after editing
                                 if (text.trim().isEmpty &&
                                     _checklistControllers[index]?.text != '') {
                                   _elementOrder.remove(element);
@@ -3151,7 +3898,6 @@ class _AddNotePageState extends State<AddNotePage> {
                             ),
                             style: TextStyle(
                               fontSize: _contentFontSize,
-                              fontFamily: _selectedFontFamily,
                               fontWeight: _selectedFontWeight,
                               fontStyle:
                                   _isItalic
@@ -3165,20 +3911,17 @@ class _AddNotePageState extends State<AddNotePage> {
                             ),
                           ),
                           trailing: IconButton(
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              color: Colors.red,
-                            ),
+                            icon: const Icon(Icons.delete, color: Colors.red),
                             onPressed: () async {
                               final confirm = await showDialog<bool>(
                                 context: context,
                                 builder:
                                     (context) => AlertDialog(
                                       title: const Text(
-                                        'Delete Checklist Item',
+                                        'Remove Checklist Item',
                                       ),
                                       content: const Text(
-                                        'Are you sure you want to delete this item?',
+                                        'Are you sure you want to remove this item?',
                                       ),
                                       actions: [
                                         TextButton(
@@ -3194,7 +3937,7 @@ class _AddNotePageState extends State<AddNotePage> {
                                           onPressed:
                                               () =>
                                                   Navigator.pop(context, true),
-                                          child: const Text('Delete'),
+                                          child: const Text('Remove'),
                                         ),
                                       ],
                                     ),
@@ -3204,7 +3947,6 @@ class _AddNotePageState extends State<AddNotePage> {
                                 setState(() {
                                   _checklistItems.removeAt(index);
                                   _elementOrder.remove(element);
-                                  // Update indices of remaining checklist items
                                   for (
                                     var i = 0;
                                     i < _elementOrder.length;
@@ -3218,9 +3960,23 @@ class _AddNotePageState extends State<AddNotePage> {
                                   }
                                 });
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Checklist item deleted.'),
-                                    backgroundColor: Colors.black,
+                                  SnackBar(
+                                    content: Text(
+                                      'Checklist item removed.',
+                                      style: TextStyle(
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.onError,
+                                      ),
+                                    ),
+                                    backgroundColor:
+                                        Theme.of(context).colorScheme.error,
+                                    behavior: SnackBarBehavior.floating,
+                                    margin: const EdgeInsets.all(8),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
                                   ),
                                 );
                                 await _saveNoteToFirestore();

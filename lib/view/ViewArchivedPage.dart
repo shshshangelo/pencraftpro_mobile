@@ -30,6 +30,23 @@ class ViewArchivedPage extends StatefulWidget {
     this.folderName,
   });
 
+  factory ViewArchivedPage.fromJson(Map<String, dynamic> json) {
+    return ViewArchivedPage(
+      title: json['title'] ?? 'Untitled',
+      contentJson:
+          (json['contentJson'] as List<dynamic>).cast<Map<String, dynamic>>(),
+      imagePaths: (json['imagePaths'] as List<dynamic>).cast<String>(),
+      voiceNote: json['voiceNote'],
+      labels: (json['labels'] as List<dynamic>).cast<String>(),
+      reminder:
+          json['reminder'] != null ? DateTime.parse(json['reminder']) : null,
+      fontFamily: json['fontFamily'],
+      folderId: json['folderId'],
+      folderColor: json['folderColor'],
+      folderName: json['folderName'],
+    );
+  }
+
   @override
   State<ViewArchivedPage> createState() => _ViewArchivedPageState();
 }
@@ -227,78 +244,116 @@ class _ViewArchivedPageState extends State<ViewArchivedPage> {
               final checklistItems =
                   item['checklistItems'] as List<dynamic>? ?? [];
               final hasChecklist = checklistItems.isNotEmpty;
-
-              if (hasChecklist) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children:
-                      checklistItems
-                          .where(
-                            (task) => (task['text'] ?? '').trim().isNotEmpty,
-                          )
-                          .map((task) {
-                            final checked = task['checked'] ?? false;
-                            return Row(
-                              children: [
-                                Checkbox(
-                                  value: checked,
-                                  onChanged: null,
-                                  activeColor:
-                                      Theme.of(context).colorScheme.primary,
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    task['text'] ?? '',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium?.copyWith(
-                                      fontSize: 14,
-                                      fontFamily: widget.fontFamily ?? 'Roboto',
-                                      decoration:
-                                          checked
-                                              ? TextDecoration.lineThrough
-                                              : null,
-                                      color:
-                                          Theme.of(
-                                            context,
-                                          ).textTheme.bodyMedium?.color,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            );
-                          })
-                          .toList(),
-                );
-              } else {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
-                  child: Text(
-                    item['text'] ?? '',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize:
-                          (item['fontSize'] != null)
-                              ? (item['fontSize'] as num).toDouble()
-                              : 16,
-                      fontFamily: widget.fontFamily ?? 'Roboto',
-                      fontWeight:
-                          (item['bold'] == true)
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                      fontStyle:
-                          (item['italic'] == true)
-                              ? FontStyle.italic
-                              : FontStyle.normal,
-                      decoration: TextDecoration.combine([
-                        if (item['underline'] == true) TextDecoration.underline,
-                        if (item['strikethrough'] == true)
-                          TextDecoration.lineThrough,
-                      ]),
-                      color: Theme.of(context).textTheme.bodyMedium?.color,
+              final hasText = (item['text'] ?? '').toString().trim().isNotEmpty;
+              List<Widget> children = [];
+              if (hasText) {
+                children.add(
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: Text(
+                      item['text'] ?? '',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontSize:
+                            (item['fontSize'] != null)
+                                ? (item['fontSize'] as num).toDouble()
+                                : 16,
+                        fontFamily:
+                            item['fontFamily'] ?? widget.fontFamily ?? 'Roboto',
+                        fontWeight:
+                            item['bold'] == true
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                        fontStyle:
+                            item['italic'] == true
+                                ? FontStyle.italic
+                                : FontStyle.normal,
+                        decoration: TextDecoration.combine([
+                          if (item['underline'] == true)
+                            TextDecoration.underline,
+                          if (item['strikethrough'] == true)
+                            TextDecoration.lineThrough,
+                        ]),
+                        color: Theme.of(context).textTheme.bodyMedium?.color,
+                      ),
                     ),
                   ),
                 );
               }
+              if (hasChecklist) {
+                children.add(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children:
+                        checklistItems
+                            .where(
+                              (task) => (task['text'] ?? '').trim().isNotEmpty,
+                            )
+                            .map((task) {
+                              final checked = task['checked'] ?? false;
+                              final fontSize =
+                                  (task['fontSize'] != null)
+                                      ? (task['fontSize'] as num).toDouble()
+                                      : (item['fontSize'] != null
+                                          ? (item['fontSize'] as num).toDouble()
+                                          : 16.0);
+                              final isBold =
+                                  task['bold'] == true || item['bold'] == true;
+                              final isItalic =
+                                  task['italic'] == true ||
+                                  item['italic'] == true;
+                              final isUnderline =
+                                  task['underline'] == true ||
+                                  item['underline'] == true;
+                              final isStrikethrough =
+                                  task['strikethrough'] == true ||
+                                  item['strikethrough'] == true;
+                              return Row(
+                                children: [
+                                  Checkbox(
+                                    value: checked,
+                                    onChanged: null,
+                                    activeColor:
+                                        Theme.of(context).colorScheme.primary,
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      task['text'] ?? '',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium?.copyWith(
+                                        fontSize: fontSize,
+                                        fontWeight:
+                                            isBold
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                        fontStyle:
+                                            isItalic
+                                                ? FontStyle.italic
+                                                : FontStyle.normal,
+                                        decoration: TextDecoration.combine([
+                                          if (isUnderline)
+                                            TextDecoration.underline,
+                                          if (isStrikethrough || checked)
+                                            TextDecoration.lineThrough,
+                                        ]),
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            })
+                            .toList(),
+                  ),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: children,
+              );
             }),
             if (widget.voiceNote != null)
               Column(
