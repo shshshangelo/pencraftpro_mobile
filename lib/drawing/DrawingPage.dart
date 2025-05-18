@@ -264,7 +264,9 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
     super.didChangeDependencies();
     if (_backgroundColor == null) {
       _backgroundColor = Theme.of(context).scaffoldBackgroundColor;
-      _saveState();
+      _saveState(
+        markModified: false,
+      ); // Set to false so initial background color doesn't count as a modification
     }
   }
 
