@@ -99,6 +99,22 @@ class DrawingSyncService {
         .getStringList('saved_drawings')
         ?.join('\n');
 
+    // Fetch user data to include email and fullName
+    String userEmail = FirebaseAuth.instance.currentUser?.email ?? '';
+    String fullName = '';
+    try {
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data()!;
+        fullName = userData['fullName'] ?? '';
+        userEmail = userData['email'] ?? userEmail;
+      }
+    } catch (e) {
+      print('Error fetching user data: $e');
+      // Continue with sync even if user data fetch fails
+    }
+
     if (drawingsString != null) {
       final List<String> drawings = drawingsString.split('\n');
       for (var drawing in drawings) {
@@ -126,6 +142,8 @@ class DrawingSyncService {
               'state': jsonDecode(stateJson),
               'createdAt': FieldValue.serverTimestamp(),
               'owner': userId,
+              'email': userEmail,
+              'fullName': fullName,
             }, SetOptions(merge: true));
           }
         }
@@ -241,6 +259,139 @@ class DrawingSyncService {
   static void _hideLoadingSpinner(BuildContext context) {
     _overlayEntry?.remove();
     _overlayEntry = null;
+  }
+
+  // New function to update existing drawings with missing email and fullName
+  static Future<void> updateExistingDrawingsWithUserInfo(
+    BuildContext context,
+  ) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // First get the user info
+      String userEmail = user.email ?? '';
+      String fullName = '';
+      try {
+        final userDoc =
+            await _firestore.collection('users').doc(user.uid).get();
+
+        if (userDoc.exists) {
+          final userData = userDoc.data()!;
+          fullName = userData['fullName'] ?? '';
+          userEmail = userData['email'] ?? userEmail;
+        } else {
+          print('User document not found, using default values');
+        }
+      } catch (e) {
+        print('Error fetching user data: $e');
+        return;
+      }
+
+      // Get all drawings for this user (either by uid or owner field)
+      final drawingsQuery =
+          await _firestore
+              .collection('drawings')
+              .where('owner', isEqualTo: user.uid)
+              .get();
+
+      final drawingsQueryUid =
+          await _firestore
+              .collection('drawings')
+              .where('uid', isEqualTo: user.uid)
+              .get();
+
+      final allDrawings = [...drawingsQuery.docs, ...drawingsQueryUid.docs];
+      final uniqueIds = <String>{};
+      final uniqueDrawings =
+          allDrawings.where((doc) => uniqueIds.add(doc.id)).toList();
+
+      print('Found ${uniqueDrawings.length} drawings to update');
+
+      // Update each drawing with the user info
+      int updatedCount = 0;
+      for (final doc in uniqueDrawings) {
+        try {
+          await _firestore.collection('drawings').doc(doc.id).update({
+            'email': userEmail,
+            'fullName': fullName,
+          });
+          updatedCount++;
+        } catch (e) {
+          print('Error updating drawing ${doc.id}: $e');
+        }
+      }
+
+      print('Updated $updatedCount drawings with user info');
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Updated $updatedCount drawings with your user info',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
+    } catch (e, stackTrace) {
+      print('Error updating existing drawings: $e');
+      print('Stack trace: $stackTrace');
+    }
+  }
+
+  static Future<void> syncDrawings(
+    BuildContext context, {
+    bool showProgress = true,
+    bool isOffline = false,
+  }) async {
+    // Prevent multiple syncs at once
+    if (_isSyncing) return;
+    _isSyncing = true;
+
+    try {
+      if (showProgress) {
+        _showLoadingSpinner(context);
+      }
+      await _syncDrawings(context, isOffline: isOffline);
+
+      // Update existing drawings with user info if we're online
+      if (!isOffline) {
+        await updateExistingDrawingsWithUserInfo(context);
+      }
+    } catch (e, stackTrace) {
+      print('Drawing sync error: $e');
+      print('Stack trace: $stackTrace');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Drawing sync failed: $e.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
+      _hideLoadingSpinner(context);
+    } finally {
+      _isSyncing = false;
+    }
   }
 }
 

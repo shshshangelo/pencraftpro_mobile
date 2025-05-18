@@ -1236,6 +1236,27 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
         return;
       }
 
+      // Fetch user data to include email and fullName
+      String userEmail = user.email ?? '';
+      String fullName = '';
+      try {
+        final userDoc =
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .get();
+
+        if (userDoc.exists) {
+          final userData = userDoc.data()!;
+          fullName = userData['fullName'] ?? '';
+          // Use the stored email if available, otherwise use the auth email
+          userEmail = userData['email'] ?? userEmail;
+        }
+      } catch (e) {
+        print('Error fetching user data: $e');
+        // Continue with sync even if user data fetch fails
+      }
+
       // Add to sync queue
       final prefs = await SharedPreferences.getInstance();
       final syncQueue = prefs.getStringList('firestore_sync_queue') ?? [];
@@ -1246,6 +1267,8 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
           'state': stateJson,
           'imageData': base64Encode(imageBytes),
           'timestamp': DateTime.now().toIso8601String(),
+          'email': userEmail,
+          'fullName': fullName,
         }),
       );
       await prefs.setStringList('firestore_sync_queue', syncQueue);
@@ -1269,10 +1292,36 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
       return;
     }
 
+    // Fetch user data to include email and fullName
+    String userEmail = user.email ?? '';
+    String fullName = '';
+    try {
+      final userDoc =
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data()!;
+        fullName = userData['fullName'] ?? '';
+        // Use the stored email if available, otherwise use the auth email
+        userEmail = userData['email'] ?? userEmail;
+      }
+    } catch (e) {
+      print('Error fetching user data: $e');
+      // Continue with sync even if user data fetch fails
+    }
+
     final updatedQueue = <String>[];
     for (final item in syncQueue) {
       try {
         final data = jsonDecode(item) as Map<String, dynamic>;
+
+        // Use email and fullName from data if available, otherwise use the ones fetched above
+        final String drawingEmail = data['email'] ?? userEmail;
+        final String drawingFullName = data['fullName'] ?? fullName;
+
         await FirebaseFirestore.instance
             .collection('drawings')
             .doc(data['fileName'])
@@ -1282,6 +1331,8 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
               'createdAt': FieldValue.serverTimestamp(),
               'state': data['state'],
               'uid': user.uid,
+              'email': drawingEmail,
+              'fullName': drawingFullName,
             });
         print('Successfully synced drawing ${data['fileName']} to Firestore');
       } catch (e) {
