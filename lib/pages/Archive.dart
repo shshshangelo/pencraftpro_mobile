@@ -1,4 +1,4 @@
-// ignore_for_file: unused_local_variable, unused_import
+// ignore_for_file: unused_local_variable, unused_import, deprecated_member_use, use_build_context_synchronously
 
 import 'dart:convert';
 import 'dart:io';
@@ -6,10 +6,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:pencraftpro/services/logout_service.dart';
+import 'package:pencraftpro/services/LogoutService.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../view/ViewArchivedPage.dart';
-import 'package:pencraftpro/services/profile_service.dart';
+import 'package:pencraftpro/services/ProfileService.dart';
 
 class Archive extends StatefulWidget {
   const Archive({super.key});
@@ -1202,7 +1202,7 @@ class _ArchiveState extends State<Archive> {
 
       await prefs.setString('notes', jsonEncode(updatedNotes));
 
-      // 🔥 Firestore update here
+      // Firestore update here
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         for (final id in selectedNoteIds) {

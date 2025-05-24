@@ -75,7 +75,7 @@ class FAQsPage extends StatelessWidget {
       ),
       body: ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        itemCount: faqs.length + 1, // +1 for contact info
+        itemCount: faqs.length + 1,
         itemBuilder: (context, index) {
           if (index < faqs.length) {
             final faq = faqs[index];

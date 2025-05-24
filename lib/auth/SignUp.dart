@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -39,10 +41,6 @@ class _SignUpState extends State<SignUp> {
   @override
   void initState() {
     super.initState();
-    // Autofocus email field
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _emailFocusNode.requestFocus();
-    });
   }
 
   @override
@@ -245,7 +243,7 @@ class _SignUpState extends State<SignUp> {
                     children: [
                       const TextSpan(text: '👉 '),
                       TextSpan(
-                        text: '$_termsUrl\n',
+                        text: _termsUrl,
                         style: const TextStyle(color: Colors.blue),
                         recognizer:
                             TapGestureRecognizer()
@@ -337,27 +335,39 @@ class _SignUpState extends State<SignUp> {
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async {
-        final shouldLeave = await showDialog<bool>(
-          context: context,
-          builder:
-              (context) => AlertDialog(
-                title: const Text('Discard changes?'),
-                content: const Text(
-                  'Are you sure you want to go back? Your entered data will be lost.',
+        // Check if user has entered any data
+        bool hasEnteredData =
+            _emailController.text.isNotEmpty ||
+            _passwordController.text.isNotEmpty ||
+            _confirmPasswordController.text.isNotEmpty;
+
+        // Only show dialog if user has entered data
+        if (hasEnteredData) {
+          final shouldLeave = await showDialog<bool>(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: const Text('Discard changes?'),
+                  content: const Text(
+                    'Are you sure you want to go back? Your entered data will be lost.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: const Text('Yes, Go Back'),
+                    ),
+                  ],
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Cancel'),
-                  ),
-                  ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    child: const Text('Yes, Go Back'),
-                  ),
-                ],
-              ),
-        );
-        return shouldLeave ?? false;
+          );
+          return shouldLeave ?? false;
+        }
+
+        // If no data entered, allow navigation without dialog
+        return true;
       },
       child: Scaffold(
         appBar: AppBar(
@@ -388,10 +398,6 @@ class _SignUpState extends State<SignUp> {
                     controller: _emailController,
                     focusNode: _emailFocusNode,
                     keyboardType: TextInputType.emailAddress,
-                    autofillHints: const [
-                      AutofillHints.newUsername,
-                      AutofillHints.email,
-                    ],
                     style: const TextStyle(fontSize: 14),
                     decoration: const InputDecoration(
                       prefixIcon: Icon(Icons.email),

@@ -18,8 +18,8 @@ import 'pages/RecycleBin.dart';
 import 'pages/Folders.dart';
 import 'pages/Labels.dart';
 import 'pages/Reminders.dart';
-import 'aboutapp/AboutApp.dart';
-import 'aboutapp/FAQsPage.dart';
+import 'aboutapp/AboutTheApp.dart';
+import 'aboutapp/FAQs.dart';
 import 'aboutapp/HowToUseApp.dart';
 import 'aboutapp/Team.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -105,7 +105,7 @@ class MyApp extends StatelessWidget {
       ],
       title: 'PenCraft Pro',
       debugShowCheckedModeBanner: false,
-      // 🔥 Auto Light/Dark Mode setup here
+      // Auto Light/Dark Mode setup here
       theme: ThemeData(
         brightness: Brightness.light,
         primaryColor: Colors.blue,
@@ -156,7 +156,7 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      themeMode: ThemeMode.system, // 🔥 Sundan system ng device
+      themeMode: ThemeMode.system,
       initialRoute: '/',
       routes: {
         '/': (context) => const RedirectPage(),
@@ -316,14 +316,27 @@ class MyHomePage extends StatelessWidget {
   }
 }
 
-class RedirectPage extends StatelessWidget {
+class RedirectPage extends StatefulWidget {
   const RedirectPage({super.key});
 
-  Future<void> handleRedirect(BuildContext context) async {
+  @override
+  State<RedirectPage> createState() => _RedirectPageState();
+}
+
+class _RedirectPageState extends State<RedirectPage> {
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(Duration.zero, () => handleRedirect());
+  }
+
+  Future<void> handleRedirect() async {
+    if (!mounted) return;
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      debugPrint("🔴 No user found, redirecting to /welcome");
+      debugPrint("No user found, redirecting to /welcome");
+      if (!mounted) return;
       Navigator.of(
         context,
       ).pushNamedAndRemoveUntil('/welcome', (route) => false);
@@ -332,9 +345,11 @@ class RedirectPage extends StatelessWidget {
 
     // Check email verification first
     await user.reload(); // Reload user to get latest verification status
+    if (!mounted) return;
+
     if (!user.emailVerified &&
         !user.providerData.any((info) => info.providerId == 'google.com')) {
-      debugPrint("🔴 Email not verified, redirecting to /verify");
+      debugPrint("Email not verified, redirecting to /verify");
       Navigator.of(
         context,
       ).pushNamedAndRemoveUntil('/verify', (route) => false);
@@ -358,12 +373,12 @@ class RedirectPage extends StatelessWidget {
         isRoleSelected = data['isRoleSelected'] ?? false;
         isIdVerified = data['isIdVerified'] ?? false;
         isFirstTimeUser = data['isFirstTimeUser'] ?? true;
-        debugPrint("🟢 Firestore flags loaded");
+        debugPrint("Firestore flags loaded");
       } else {
-        debugPrint("🟡 Firestore doc does not exist, fallback to prefs");
+        debugPrint("Firestore doc does not exist, fallback to prefs");
       }
     } catch (e) {
-      debugPrint("⚠️ Firestore error: $e — using SharedPreferences");
+      debugPrint("Firestore error: $e — using SharedPreferences");
       final prefs = await SharedPreferences.getInstance();
       isNameVerified = prefs.getBool('isNameVerified') ?? false;
       isRoleSelected = prefs.getBool('isRoleSelected') ?? false;
@@ -371,9 +386,11 @@ class RedirectPage extends StatelessWidget {
       isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
     }
 
+    if (!mounted) return;
+
     final isFullyVerified =
         isNameVerified && isRoleSelected && isIdVerified && !isFirstTimeUser;
-    debugPrint("✅ Verification Status: $isFullyVerified");
+    debugPrint("Verification Status: $isFullyVerified");
 
     if (isFullyVerified) {
       Navigator.of(
@@ -388,8 +405,6 @@ class RedirectPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Future.delayed(Duration.zero, () => handleRedirect(context));
-
     return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }

@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously, duplicate_ignore
+
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -167,53 +169,66 @@ class _SelectionActionState extends State<SelectionAction> {
   }
 
   Widget _buildPortraitLayout(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Image.asset(
-              'assets/aclc.png',
-              width: 250,
-              height: 200,
-              fit: BoxFit.contain,
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Hi there, What would you like to do?',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Satisfy',
-                fontSize: 28,
-                fontWeight: FontWeight.w500,
-                color: Theme.of(context).colorScheme.primary,
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const SizedBox(height: 20),
+              Center(
+                child: Image.asset(
+                  'assets/aclc.png',
+                  width: 250,
+                  height: 200,
+                  fit: BoxFit.contain,
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            GridView.count(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                _buildActionCard(
-                  context,
-                  icon: Icons.note,
-                  title: 'Take Notes',
-                  onTap: () => _handleRestrictedAction(context, '/notes'),
+              const SizedBox(height: 20),
+              Center(
+                child: Text(
+                  'Hi there, What would you like to do?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Satisfy',
+                    fontSize: 28,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
-                _buildActionCard(
-                  context,
-                  icon: Icons.draw,
-                  title: 'Start Drawing',
-                  onTap: () => _handleRestrictedAction(context, '/drawing'),
+              ),
+              const SizedBox(height: 40),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: GridView.count(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      _buildActionCard(
+                        context,
+                        icon: Icons.note,
+                        title: 'Take Notes',
+                        onTap: () => _handleRestrictedAction(context, '/notes'),
+                      ),
+                      _buildActionCard(
+                        context,
+                        icon: Icons.draw,
+                        title: 'Start Drawing',
+                        onTap:
+                            () => _handleRestrictedAction(context, '/drawing'),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );

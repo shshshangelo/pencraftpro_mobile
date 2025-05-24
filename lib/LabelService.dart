@@ -101,7 +101,7 @@ class LabelService {
         }
       }
 
-      debugPrint('✅ Label "$oldName" updated to "$newName" in all notes');
+      debugPrint('Label "$oldName" updated to "$newName" in all notes');
     } catch (e) {
       debugPrint('❌ Error updating label: $e');
       rethrow;
@@ -172,9 +172,9 @@ class LabelService {
         }
       }
 
-      debugPrint('✅ Label "$labelName" deleted and removed from all notes');
+      debugPrint('Label "$labelName" deleted and removed from all notes');
     } catch (e) {
-      debugPrint('❌ Error deleting label: $e');
+      debugPrint('Error deleting label: $e');
       rethrow;
     }
   }

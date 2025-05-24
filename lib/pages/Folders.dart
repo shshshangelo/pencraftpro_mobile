@@ -1,10 +1,12 @@
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use, library_private_types_in_public_api
+
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:pencraftpro/FolderService.dart';
-import 'package:pencraftpro/services/logout_service.dart';
+import 'package:pencraftpro/services/LogoutService.dart';
 import 'package:pencraftpro/view/ViewFolderPage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:pencraftpro/services/profile_service.dart';
+import 'package:pencraftpro/services/ProfileService.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Folders extends StatefulWidget {
@@ -275,7 +277,7 @@ class _FoldersState extends State<Folders> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          count > 1 ? '$count folders deleted.' : 'Folder deleted.',
+          count > 1 ? '$count folders removed.' : 'Folder removed.',
           style: TextStyle(
             color: Theme.of(context).colorScheme.onErrorContainer,
           ),

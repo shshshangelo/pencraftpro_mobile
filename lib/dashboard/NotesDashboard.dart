@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use, library_private_types_in_public_api, unused_field
+// ignore_for_file: deprecated_member_use, library_private_types_in_public_api, unused_field, use_build_context_synchronously, unused_element, unused_local_variable, unrelated_type_equality_checks
 
 import 'dart:io';
 import 'dart:async';
@@ -6,13 +6,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:pencraftpro/services/SyncService.dart';
-import 'package:pencraftpro/services/logout_service.dart';
+import 'package:pencraftpro/services/LogoutService.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import '../notes/AddNotePage.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:pencraftpro/services/profile_service.dart';
+import 'package:pencraftpro/services/ProfileService.dart';
 import 'package:pencraftpro/FolderService.dart';
 
 class NotesDashboard extends StatefulWidget {
@@ -189,13 +189,13 @@ class _NotesDashboardState extends State<NotesDashboard> {
           },
         );
 
-        debugPrint('✅ Sync triggered and notes loaded.');
+        debugPrint('Sync triggered and notes loaded.');
       } else {
         print('Offline: Using cached notes from SharedPreferences');
-        debugPrint('✅ Offline mode: Loaded cached notes.');
+        debugPrint('Offline mode: Loaded cached notes.');
       }
     } else {
-      debugPrint('⏸️ Sync blocked: First-time user or not yet verified.');
+      debugPrint('Sync blocked: First-time user or not yet verified.');
       print('Loading notes from SharedPreferences for first-time user');
     }
   }
@@ -762,11 +762,41 @@ class _NotesDashboardState extends State<NotesDashboard> {
       final connectivityResult = await Connectivity().checkConnectivity();
       final isOffline = connectivityResult == ConnectivityResult.none;
 
+      // Check if user left a collaboration
+      if (result['leftCollaboration'] == true) {
+        // Ensure note is removed from the notes list
+        setState(() {
+          notes.removeWhere((note) => note['id'] == result['id']);
+        });
+
+        // Force refresh from storage
+        await _loadNotesFromPrefs();
+
+        // Show appropriate message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'You left the collaboration',
+                style: TextStyle(color: Theme.of(context).colorScheme.onError),
+              ),
+              backgroundColor: Theme.of(context).colorScheme.error,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          );
+        }
+        return; // Skip the rest of processing
+      }
+
       if (!isOffline) {
         try {
           await _loadNotesFromFirestore();
         } catch (e) {
-          debugPrint('⚠️ Failed to load notes from Firestore: $e');
+          debugPrint('Failed to load notes from Firestore: $e');
         }
       }
 
@@ -978,217 +1008,84 @@ class _NotesDashboardState extends State<NotesDashboard> {
     );
   }
 
-  Future<void> _removeCollaborator(String noteId, String emailToRemove) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    // Get current user's email
-    final currentUserEmail = user.email;
-    if (currentUserEmail == null) return;
-
-    // Show confirmation dialog
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(
-              emailToRemove == currentUserEmail
-                  ? 'Remove Yourself from Collaboration?'
-                  : 'Remove Collaborator?',
-              textAlign: TextAlign.center,
+  Widget buildElementPreview(
+    Map<String, dynamic> note,
+    Map<String, dynamic> contentJson,
+    dynamic element,
+    bool isLandscape,
+  ) {
+    if (element['type'] == 'image') {
+      final imagePaths = note['imagePaths'] as List<dynamic>? ?? [];
+      final path = element['path'];
+      if (imagePaths.contains(path)) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2.0),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+              File(path),
+              height: isLandscape ? 40 : 60,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder:
+                  (context, error, stackTrace) => Icon(Icons.broken_image),
             ),
-            content: Text(
-              emailToRemove == currentUserEmail
-                  ? 'You will no longer have access to this note. This action cannot be undone.'
-                  : 'Are you sure you want to remove this collaborator?',
-              textAlign: TextAlign.center,
+          ),
+        );
+      }
+    } else if (element['type'] == 'voice') {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2.0),
+        child: Row(
+          children: [
+            Icon(
+              Icons.mic,
+              size: isLandscape ? 14 : 18,
+              color: Theme.of(context).colorScheme.primary,
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
+            const SizedBox(width: 4),
+            Text(
+              'Voice note attached',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      );
+    } else if (element['type'] == 'checklist') {
+      final checklistItems =
+          contentJson['checklistItems'] as List<dynamic>? ?? [];
+      final index = element['index'];
+      if (index != null && index < checklistItems.length) {
+        final item = checklistItems[index];
+        final isChecked = item['checked'] == true;
+        final text = item['text'] ?? '';
+        if (text.toString().trim().isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1.0),
+          child: Row(
+            children: [
+              Icon(
+                isChecked ? Icons.check_box : Icons.check_box_outline_blank,
+                size: isLandscape ? 12 : 14,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.error,
-                  foregroundColor: Theme.of(context).colorScheme.onError,
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  text,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    decoration: isChecked ? TextDecoration.lineThrough : null,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Remove'),
               ),
             ],
-          ),
-    );
-
-    if (confirm != true) return;
-
-    try {
-      final noteRef = FirebaseFirestore.instance
-          .collection('notes')
-          .doc(noteId);
-      final noteDoc = await noteRef.get();
-
-      if (!noteDoc.exists) return;
-
-      final noteData = noteDoc.data();
-      if (noteData == null) return;
-
-      final currentCollaborators = List<String>.from(
-        noteData['collaboratorEmails'] ?? [],
-      );
-      final currentCollaboratorUIDs = List<String>.from(
-        noteData['collaborators'] ?? [],
-      );
-      final owner = noteData['owner'] as String?;
-
-      // Remove the collaborator
-      currentCollaborators.remove(emailToRemove);
-
-      // If user is removing themselves, we need to handle it differently
-      if (emailToRemove == currentUserEmail) {
-        // Get the collaborator's UID
-        final userQuery =
-            await FirebaseFirestore.instance
-                .collection('users')
-                .where('email', isEqualTo: emailToRemove)
-                .get();
-
-        if (userQuery.docs.isNotEmpty) {
-          final collaboratorUID = userQuery.docs.first.id;
-          currentCollaboratorUIDs.remove(collaboratorUID);
-        }
-
-        // Update Firestore
-        await noteRef.update({
-          'collaboratorEmails': currentCollaborators,
-          'collaborators': currentCollaboratorUIDs,
-          'updatedAt': DateTime.now().toIso8601String(),
-        });
-
-        // If the user is not the owner, remove the note from their view
-        if (owner != user.uid) {
-          // Remove note from local state
-          setState(() {
-            notes.removeWhere((note) => note['id'] == noteId);
-          });
-
-          // Update SharedPreferences
-          final prefs = await SharedPreferences.getInstance();
-          final notesString = prefs.getString('notes');
-          if (notesString != null) {
-            final List<dynamic> notesList = jsonDecode(notesString);
-            notesList.removeWhere((note) => note['id'] == noteId);
-            await prefs.setString('notes', jsonEncode(notesList));
-          }
-
-          // Cancel current listener and set up a new one
-          _noteListener?.cancel();
-          _setupNoteListener();
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'You have been removed from the collaboration.',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                ),
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                behavior: SnackBarBehavior.floating,
-                margin: const EdgeInsets.all(8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          }
-        }
-      } else {
-        // If removing another collaborator
-        // Get the collaborator's UID
-        final userQuery =
-            await FirebaseFirestore.instance
-                .collection('users')
-                .where('email', isEqualTo: emailToRemove)
-                .get();
-
-        if (userQuery.docs.isNotEmpty) {
-          final collaboratorUID = userQuery.docs.first.id;
-          currentCollaboratorUIDs.remove(collaboratorUID);
-        }
-
-        // Update Firestore
-        await noteRef.update({
-          'collaboratorEmails': currentCollaborators,
-          'collaborators': currentCollaboratorUIDs,
-          'updatedAt': DateTime.now().toIso8601String(),
-        });
-
-        // Update local state
-        setState(() {
-          final index = notes.indexWhere((note) => note['id'] == noteId);
-          if (index != -1) {
-            notes[index]['collaboratorEmails'] = currentCollaborators;
-            notes[index]['collaborators'] = currentCollaboratorUIDs;
-          }
-        });
-
-        // Update SharedPreferences
-        final prefs = await SharedPreferences.getInstance();
-        final notesString = prefs.getString('notes');
-        if (notesString != null) {
-          final List<dynamic> notesList = jsonDecode(notesString);
-          final noteIndex = notesList.indexWhere(
-            (note) => note['id'] == noteId,
-          );
-          if (noteIndex != -1) {
-            notesList[noteIndex]['collaboratorEmails'] = currentCollaborators;
-            notesList[noteIndex]['collaborators'] = currentCollaboratorUIDs;
-            await prefs.setString('notes', jsonEncode(notesList));
-          }
-        }
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '$emailToRemove has been removed from the collaboration.',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onPrimary,
-                ),
-              ),
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              behavior: SnackBarBehavior.floating,
-              margin: const EdgeInsets.all(8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Failed to remove collaborator. Please try again.',
-              style: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
-            ),
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(8),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            duration: const Duration(seconds: 3),
           ),
         );
       }
     }
+    return const SizedBox.shrink();
   }
 
   @override
@@ -1487,7 +1384,7 @@ class _NotesDashboardState extends State<NotesDashboard> {
                         );
                       }
                     } catch (e) {
-                      debugPrint('⚠️ Failed to load notes from Firestore: $e');
+                      debugPrint('Failed to load notes from Firestore: $e');
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -1688,6 +1585,15 @@ class _NotesDashboardState extends State<NotesDashboard> {
                               // Threshold: if more than 3 other major items in landscape
                               showImagesInCard = false;
                             }
+
+                            final List<dynamic> elementOrder =
+                                note['elementOrder'] ?? [];
+                            final List<dynamic> contentJsonList =
+                                note['contentJson'] as List<dynamic>? ?? [];
+                            final contentJson =
+                                contentJsonList.isNotEmpty
+                                    ? contentJsonList[0]
+                                    : {};
 
                             return GestureDetector(
                               onTap: () {
@@ -2065,40 +1971,61 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                           const EdgeInsets.only(
                                                             top: 4.0,
                                                           ),
-                                                      child: Text(
-                                                        firstTextItem,
-                                                        style: Theme.of(
-                                                          context,
-                                                        ).textTheme.bodyMedium?.copyWith(
-                                                          fontSize:
-                                                              isLandscape
-                                                                  ? 12
-                                                                  : 14,
-                                                          fontFamily:
-                                                              textFontFamily,
-                                                          fontWeight:
-                                                              textIsBold
-                                                                  ? FontWeight
-                                                                      .bold
-                                                                  : null,
-                                                          fontStyle:
-                                                              textIsItalic
-                                                                  ? FontStyle
-                                                                      .italic
-                                                                  : null,
-                                                          decoration: TextDecoration.combine([
-                                                            if (textIsUnderline)
-                                                              TextDecoration
-                                                                  .underline,
-                                                            if (textIsStrikethrough)
-                                                              TextDecoration
-                                                                  .lineThrough,
-                                                          ]),
-                                                        ),
-                                                        maxLines: 3,
-                                                        overflow:
-                                                            TextOverflow
-                                                                .ellipsis,
+                                                      child: Builder(
+                                                        builder: (context) {
+                                                          // Check if note has only basic content (title and text)
+                                                          final bool
+                                                          hasOnlyBasicContent =
+                                                              !hasImages &&
+                                                              !actualVoiceNotePresent &&
+                                                              !actualReminderPresent &&
+                                                              !actualLabelsPresent &&
+                                                              !actualChecklistPresent &&
+                                                              note['folderId'] ==
+                                                                  null;
+
+                                                          return Text(
+                                                            firstTextItem,
+                                                            style: Theme.of(
+                                                              context,
+                                                            ).textTheme.bodyMedium?.copyWith(
+                                                              fontSize:
+                                                                  isLandscape
+                                                                      ? 12
+                                                                      : 14,
+                                                              fontFamily:
+                                                                  textFontFamily,
+                                                              fontWeight:
+                                                                  textIsBold
+                                                                      ? FontWeight
+                                                                          .bold
+                                                                      : null,
+                                                              fontStyle:
+                                                                  textIsItalic
+                                                                      ? FontStyle
+                                                                          .italic
+                                                                      : null,
+                                                              decoration: TextDecoration.combine([
+                                                                if (textIsUnderline)
+                                                                  TextDecoration
+                                                                      .underline,
+                                                                if (textIsStrikethrough)
+                                                                  TextDecoration
+                                                                      .lineThrough,
+                                                              ]),
+                                                            ),
+                                                            maxLines:
+                                                                hasOnlyBasicContent
+                                                                    ? null
+                                                                    : 3,
+                                                            overflow:
+                                                                hasOnlyBasicContent
+                                                                    ? TextOverflow
+                                                                        .visible
+                                                                    : TextOverflow
+                                                                        .ellipsis,
+                                                          );
+                                                        },
                                                       ),
                                                     ),
                                                   if (actualVoiceNotePresent)
@@ -2186,40 +2113,76 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                                       )
                                                                       .toList() ??
                                                                   [];
-                                                              return items
-                                                                  .take(
-                                                                    isLandscape
-                                                                        ? 1
-                                                                        : 2,
-                                                                  )
-                                                                  .map<Widget>((
-                                                                    item,
-                                                                  ) {
-                                                                    final bool
-                                                                    isChecked =
-                                                                        item['checked'] ==
-                                                                        true;
-                                                                    final String
-                                                                    taskText =
-                                                                        item['text']
-                                                                            ?.toString() ??
-                                                                        '';
-                                                                    if (taskText
-                                                                        .isEmpty) {
-                                                                      return const SizedBox.shrink();
-                                                                    }
-                                                                    return Padding(
-                                                                      padding: const EdgeInsets.symmetric(
+
+                                                              // Check if note has only basic content (title, text, checklist)
+                                                              final bool
+                                                              hasOnlyBasicContent =
+                                                                  !hasImages &&
+                                                                  !actualVoiceNotePresent &&
+                                                                  !actualReminderPresent &&
+                                                                  !actualLabelsPresent &&
+                                                                  note['folderId'] ==
+                                                                      null;
+
+                                                              // If note has only basic content, show all items
+                                                              // Otherwise, limit to 1 or 2 based on orientation
+                                                              final itemsToShow =
+                                                                  hasOnlyBasicContent
+                                                                      ? items
+                                                                      : items.take(
+                                                                        isLandscape
+                                                                            ? 1
+                                                                            : 2,
+                                                                      );
+
+                                                              return itemsToShow.map<
+                                                                Widget
+                                                              >((item) {
+                                                                final bool
+                                                                isChecked =
+                                                                    item['checked'] ==
+                                                                    true;
+                                                                final String
+                                                                taskText =
+                                                                    item['text']
+                                                                        ?.toString() ??
+                                                                    '';
+                                                                if (taskText
+                                                                    .isEmpty) {
+                                                                  return const SizedBox.shrink();
+                                                                }
+                                                                return Padding(
+                                                                  padding:
+                                                                      const EdgeInsets.symmetric(
                                                                         vertical:
                                                                             1.0,
                                                                       ),
-                                                                      child: Row(
-                                                                        children: [
-                                                                          Icon(
-                                                                            isChecked
-                                                                                ? Icons.check_box
-                                                                                : Icons.check_box_outline_blank,
-                                                                            size:
+                                                                  child: Row(
+                                                                    children: [
+                                                                      Icon(
+                                                                        isChecked
+                                                                            ? Icons.check_box
+                                                                            : Icons.check_box_outline_blank,
+                                                                        size:
+                                                                            isLandscape
+                                                                                ? 12
+                                                                                : 14,
+                                                                        color:
+                                                                            Theme.of(
+                                                                              context,
+                                                                            ).colorScheme.onSurfaceVariant,
+                                                                      ),
+                                                                      const SizedBox(
+                                                                        width:
+                                                                            4,
+                                                                      ),
+                                                                      Flexible(
+                                                                        child: Text(
+                                                                          taskText,
+                                                                          style: Theme.of(
+                                                                            context,
+                                                                          ).textTheme.bodySmall?.copyWith(
+                                                                            fontSize:
                                                                                 isLandscape
                                                                                     ? 12
                                                                                     : 14,
@@ -2227,41 +2190,21 @@ class _NotesDashboardState extends State<NotesDashboard> {
                                                                                 Theme.of(
                                                                                   context,
                                                                                 ).colorScheme.onSurfaceVariant,
+                                                                            decoration:
+                                                                                isChecked
+                                                                                    ? TextDecoration.lineThrough
+                                                                                    : null,
                                                                           ),
-                                                                          const SizedBox(
-                                                                            width:
-                                                                                4,
-                                                                          ),
-                                                                          Flexible(
-                                                                            child: Text(
-                                                                              taskText,
-                                                                              style: Theme.of(
-                                                                                context,
-                                                                              ).textTheme.bodySmall?.copyWith(
-                                                                                fontSize:
-                                                                                    isLandscape
-                                                                                        ? 12
-                                                                                        : 14,
-                                                                                color:
-                                                                                    Theme.of(
-                                                                                      context,
-                                                                                    ).colorScheme.onSurfaceVariant,
-                                                                                decoration:
-                                                                                    isChecked
-                                                                                        ? TextDecoration.lineThrough
-                                                                                        : null,
-                                                                              ),
-                                                                              maxLines:
-                                                                                  1,
-                                                                              overflow:
-                                                                                  TextOverflow.ellipsis,
-                                                                            ),
-                                                                          ),
-                                                                        ],
+                                                                          maxLines:
+                                                                              1,
+                                                                          overflow:
+                                                                              TextOverflow.ellipsis,
+                                                                        ),
                                                                       ),
-                                                                    );
-                                                                  })
-                                                                  .toList();
+                                                                    ],
+                                                                  ),
+                                                                );
+                                                              }).toList();
                                                             }).toList(),
                                                       ),
                                                     ),

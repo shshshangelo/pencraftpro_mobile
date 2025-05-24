@@ -1,13 +1,14 @@
-// ignore_for_file: deprecated_member_use, unused_local_variable
+// ignore_for_file: deprecated_member_use, unused_local_variable, use_build_context_synchronously, unused_element, library_private_types_in_public_api
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:pencraftpro/LabelService.dart';
-import 'package:pencraftpro/services/logout_service.dart';
+import 'package:pencraftpro/services/LogoutService.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'NotesByLabelScreen.dart';
 
+/// A StatefulWidget that displays and manages labels in the application
 class Labels extends StatefulWidget {
   const Labels({super.key});
 
@@ -16,20 +17,24 @@ class Labels extends StatefulWidget {
 }
 
 class _LabelsState extends State<Labels> {
+  // Controller for the search text field
   final TextEditingController _searchController = TextEditingController();
-  bool isSearching = false;
-  bool isEditing = false;
-  List<Map<String, dynamic>> notes = [];
-  Set<String> selectedLabels = {};
-  List<String> availableLabels = [];
+
+  // State variables
+  bool isSearching = false; // Tracks if search mode is active
+  bool isEditing = false; // Tracks if edit mode is active
+  List<Map<String, dynamic>> notes = []; // List of all notes
+  Set<String> selectedLabels = {}; // Set of selected labels
+  List<String> availableLabels = []; // List of available labels
 
   @override
   void initState() {
     super.initState();
-    _loadNotesFromPrefs();
-    _syncNoteLabelsToLabelService();
+    _loadNotesFromPrefs(); // Load notes from SharedPreferences
+    _syncNoteLabelsToLabelService(); // Sync labels from notes to label service
   }
 
+  /// Shows a dialog to rename a label
   void _showRenameDialog(String oldName) async {
     final controller = TextEditingController(text: oldName);
 
@@ -46,10 +51,7 @@ class _LabelsState extends State<Labels> {
             ),
             content: TextField(
               controller: controller,
-              style:
-                  Theme.of(
-                    context,
-                  ).textTheme.bodyMedium, // <-- default font size for input
+              style: Theme.of(context).textTheme.bodyMedium,
               decoration: InputDecoration(
                 hintText: 'New label name',
                 hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -129,6 +131,7 @@ class _LabelsState extends State<Labels> {
     }
   }
 
+  /// Loads labels from the label service
   void _loadLabelsFromService() async {
     final labelObjects = await LabelService.loadLabels();
     setState(() {
@@ -136,6 +139,7 @@ class _LabelsState extends State<Labels> {
     });
   }
 
+  /// Syncs labels from notes to the label service
   Future<void> _syncNoteLabelsToLabelService() async {
     final prefs = await SharedPreferences.getInstance();
     final notesJson = prefs.getString('notes') ?? '[]';
@@ -157,6 +161,7 @@ class _LabelsState extends State<Labels> {
     }
   }
 
+  /// Loads notes from SharedPreferences
   Future<void> _loadNotesFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     final jsonString = prefs.getString('notes') ?? '[]';
@@ -178,6 +183,7 @@ class _LabelsState extends State<Labels> {
     super.dispose();
   }
 
+  /// Deletes the selected labels
   void _deleteSelectedLabels() async {
     if (selectedLabels.isEmpty) return;
 
@@ -275,12 +281,14 @@ class _LabelsState extends State<Labels> {
     }
   }
 
+  /// Selects all available labels
   void _selectAllLabels(Set<String> allLabels) {
     setState(() {
       selectedLabels = allLabels;
     });
   }
 
+  /// Cancels the current selection
   void _cancelSelection() {
     setState(() {
       selectedLabels.clear();
@@ -288,6 +296,7 @@ class _LabelsState extends State<Labels> {
     });
   }
 
+  /// Deletes a single label
   void _deleteLabel(Label label) async {
     try {
       await LabelService.deleteLabel(label.name);
@@ -332,6 +341,7 @@ class _LabelsState extends State<Labels> {
     }
   }
 
+  /// Edits a label's name
   void _editLabel(Label label) async {
     final controller = TextEditingController(text: label.name);
     final newName = await showDialog<String>(
@@ -348,10 +358,7 @@ class _LabelsState extends State<Labels> {
             content: TextField(
               controller: controller,
               autofocus: true,
-              style:
-                  Theme.of(
-                    context,
-                  ).textTheme.bodyMedium, // <-- default font size for input
+              style: Theme.of(context).textTheme.bodyMedium,
               decoration: const InputDecoration(
                 hintText: 'Label name',
                 border: OutlineInputBorder(),
@@ -429,12 +436,15 @@ class _LabelsState extends State<Labels> {
     return FutureBuilder<List<Label>>(
       future: LabelService.loadLabels(),
       builder: (context, snapshot) {
+        // Show loading indicator while loading labels
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
 
+        // Get all available labels
         final allLabels = snapshot.data!.map((e) => e.name).toSet();
 
+        // Filter labels based on search query
         final filteredLabels =
             allLabels
                 .where(
@@ -444,6 +454,7 @@ class _LabelsState extends State<Labels> {
                 )
                 .toList();
 
+        // Check if user is signed in
         final user = FirebaseAuth.instance.currentUser;
         if (user == null) {
           return Scaffold(
@@ -456,13 +467,12 @@ class _LabelsState extends State<Labels> {
           );
         }
 
+        // Main scaffold with drawer and app bar
         return WillPopScope(
-          onWillPop: () async {
-            // Prevent going back to /notes
-            return false;
-          },
+          onWillPop: () async => false, // Prevent back navigation
           child: OrientationBuilder(
             builder: (context, orientation) {
+              // Calculate grid layout based on screen size
               final isLandscape = orientation == Orientation.landscape;
               final screenWidth = MediaQuery.of(context).size.width;
               const minCardWidth = 150.0;
@@ -488,6 +498,7 @@ class _LabelsState extends State<Labels> {
                 bottomNavigationBar: _buildBottomAppBar(),
                 floatingActionButton: FloatingActionButton(
                   onPressed: () async {
+                    // Show dialog to create new label
                     final controller = TextEditingController();
                     final newLabel = await showDialog<String>(
                       context: context,
@@ -584,11 +595,13 @@ class _LabelsState extends State<Labels> {
     );
   }
 
+  /// Builds the navigation drawer
   Widget _buildDrawer(BuildContext context) {
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
+          // Logo container
           Container(
             height: 200,
             decoration: const BoxDecoration(
@@ -598,6 +611,7 @@ class _LabelsState extends State<Labels> {
               ),
             ),
           ),
+          // Navigation items
           Divider(thickness: 2, color: Theme.of(context).colorScheme.onSurface),
           ListTile(
             leading: Icon(
@@ -717,6 +731,7 @@ class _LabelsState extends State<Labels> {
     );
   }
 
+  /// Builds the app bar with search and edit functionality
   PreferredSizeWidget _buildAppBar(
     BuildContext context,
     Set<String> allLabels,
@@ -810,6 +825,7 @@ class _LabelsState extends State<Labels> {
     );
   }
 
+  /// Builds the empty state when no labels are available
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -833,6 +849,7 @@ class _LabelsState extends State<Labels> {
     );
   }
 
+  /// Builds the grid of labels
   Widget _buildLabelsGrid(
     List<String> labels,
     double padding,
@@ -916,6 +933,7 @@ class _LabelsState extends State<Labels> {
     );
   }
 
+  /// Builds the bottom app bar with home navigation
   Widget _buildBottomAppBar() {
     return BottomAppBar(
       color: Theme.of(context).colorScheme.error,

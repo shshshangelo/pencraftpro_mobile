@@ -292,7 +292,7 @@ class _ViewFolderPageState extends State<ViewFolderPage> {
                                                               .colorScheme
                                                               .onSurfaceVariant,
                                                     ),
-                                                  if (actualChecklistPresent) // Add this condition
+                                                  if (actualChecklistPresent)
                                                     Icon(
                                                       Icons.checklist,
                                                       size:

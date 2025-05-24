@@ -1,3 +1,5 @@
+// ignore_for_file: unrelated_type_equality_checks
+
 import 'package:flutter/material.dart';
 import '../drawing/DrawingPage.dart';
 import '../drawing/SavedDrawingPage.dart';
@@ -71,7 +73,7 @@ class _DrawingDashboardState extends State<DrawingDashboard> {
     );
   }
 
-  // Portrait layout (exact as you described)
+  // Portrait layout
   Widget _buildPortraitLayout(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -133,7 +135,7 @@ class _DrawingDashboardState extends State<DrawingDashboard> {
     );
   }
 
-  // Landscape version, same layout pero mas compressed if needed
+  // Landscape version
   Widget _buildLandscapeLayout(BuildContext context) {
     return SingleChildScrollView(
       child: Center(

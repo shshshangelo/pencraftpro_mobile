@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -16,7 +18,7 @@ class _EmailVerificationState extends State<EmailVerification> {
   late Timer _countdownTimer;
   late Timer _checkTimer;
 
-  int _secondsRemaining = 180; // 3 minutes
+  int _secondsRemaining = 180;
   int _resendCooldown = 30;
   bool _canResend = false;
   bool _isLoading = false;
@@ -249,7 +251,7 @@ class _EmailVerificationState extends State<EmailVerification> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Verify Your Email'),
-          automaticallyImplyLeading: false, // 👈 This disables the back button
+          automaticallyImplyLeading: false, // This disables the back button
           backgroundColor: Theme.of(context).colorScheme.primary,
           foregroundColor: Colors.white,
         ),

@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use, library_private_types_in_public_api, unused_field
+// ignore_for_file: deprecated_member_use, library_private_types_in_public_api, unused_field, use_build_context_synchronously, unused_local_variable
 
 import 'dart:convert';
 import 'dart:io';
@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../view/ViewRemindersPage.dart';
-import 'package:pencraftpro/services/profile_service.dart';
+import 'package:pencraftpro/services/ProfileService.dart';
 
 class Reminders extends StatefulWidget {
   const Reminders({super.key});
@@ -245,19 +245,21 @@ class _RemindersState extends State<Reminders> {
                               color: Theme.of(context).colorScheme.onError,
                             ),
                           ),
-                          onPressed: () => Navigator.pop(context, true),
+                          onPressed: () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.clear();
+                            await FirebaseAuth.instance.signOut();
+                            if (context.mounted) {
+                              Navigator.of(context).pushNamedAndRemoveUntil(
+                                '/login',
+                                (route) => false,
+                              );
+                            }
+                          },
                         ),
                       ],
                     ),
               );
-              if (confirm == true) {
-                await FirebaseAuth.instance.signOut();
-                if (context.mounted) {
-                  Navigator.of(
-                    context,
-                  ).pushNamedAndRemoveUntil('/login', (route) => false);
-                }
-              }
             },
           ),
         ],

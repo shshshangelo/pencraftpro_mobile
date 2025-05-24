@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use
+
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -6,7 +8,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pencraftpro/drawing/DrawingPage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:pencraftpro/dashboard/DrawingDashboard.dart';
 
 class SavedDrawingsPage extends StatefulWidget {
   const SavedDrawingsPage({super.key});
@@ -223,13 +224,44 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
         ),
       );
     } else {
-      // Fallback to basic parameters if no state file exists
-      final offsetX =
-          drawingData.length > 3 ? double.tryParse(drawingData[3]) ?? 0.0 : 0.0;
-      final offsetY =
-          drawingData.length > 4 ? double.tryParse(drawingData[4]) ?? 0.0 : 0.0;
-      final scale =
-          drawingData.length > 5 ? double.tryParse(drawingData[5]) ?? 1.0 : 1.0;
+      // Fallback: Try to fetch from Firestore
+      await _loadDrawingFromFirestore(fileName, title);
+    }
+  }
+
+  Future<void> _loadDrawingFromFirestore(String drawingId, String title) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        print('User not authenticated, cannot load from Firestore');
+        return;
+      }
+
+      final doc =
+          await FirebaseFirestore.instance
+              .collection('drawings')
+              .doc(drawingId)
+              .get();
+
+      if (!doc.exists) {
+        print('Drawing document does not exist');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Drawing not found in Firestore.')),
+        );
+        return;
+      }
+
+      // Check if user has access to this drawing
+      final data = doc.data()!;
+      if (data['uid'] != user.uid) {
+        print('User does not have access to this drawing');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('You do not have access to this drawing.')),
+        );
+        return;
+      }
+
+      final state = await DrawingState.fromJson(data['state']);
 
       Navigator.push(
         context,
@@ -237,11 +269,20 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
           builder:
               (_) => DrawingCanvasPage(
                 customTitle: title,
-                initialOffsetX: offsetX,
-                initialOffsetY: offsetY,
-                initialScale: scale,
+                initialOffsetX:
+                    state.images.isNotEmpty ? state.images[0]['offsetX'] : 0,
+                initialOffsetY:
+                    state.images.isNotEmpty ? state.images[0]['offsetY'] : 0,
+                initialScale:
+                    state.images.isNotEmpty ? state.images[0]['scale'] : 1.0,
+                initialState: state,
               ),
         ),
+      );
+    } catch (e) {
+      print('Failed to load from Firestore: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load drawing from Firestore.')),
       );
     }
   }
@@ -323,6 +364,8 @@ class _SavedDrawingsPageState extends State<SavedDrawingsPage> {
                                       ? DateTime.tryParse(drawingData[1]) ??
                                           DateTime.now()
                                       : DateTime.now();
+                              // Drawing data format: [fileName|dateTime|title|offsetX|offsetY|scale]
+                              // Extract title from position 2 if available, otherwise use default naming
                               final title =
                                   drawingData.length > 2
                                       ? drawingData[2].isNotEmpty

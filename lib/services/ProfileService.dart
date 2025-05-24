@@ -23,7 +23,7 @@ class ProfileService {
 
       return isRoleSelected && isIdVerified;
     }
-    // For email/password users, we need name verification as well
+    // For email/password users, we need fullname verification as well
     else {
       final isNameVerified = prefs.getBool('isNameVerified') ?? false;
       final isRoleSelected = prefs.getBool('isRoleSelected') ?? false;

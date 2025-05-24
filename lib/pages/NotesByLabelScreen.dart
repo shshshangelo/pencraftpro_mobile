@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use, library_private_types_in_public_api, unused_field
+// ignore_for_file: deprecated_member_use, library_private_types_in_public_api, unused_field, unused_local_variable
 
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -289,7 +289,7 @@ class _NotesByLabelScreenState extends State<NotesByLabelScreen> {
                                                               .colorScheme
                                                               .onSurfaceVariant,
                                                     ),
-                                                  if (actualChecklistPresent) // Add this condition
+                                                  if (actualChecklistPresent)
                                                     Icon(
                                                       Icons.checklist,
                                                       size:

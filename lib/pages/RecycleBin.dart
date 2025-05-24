@@ -9,7 +9,7 @@ import 'package:pencraftpro/services/SyncService.dart';
 import 'package:pencraftpro/view/ViewDeletedPage.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:pencraftpro/services/profile_service.dart';
+import 'package:pencraftpro/services/ProfileService.dart';
 
 class RecycleBin extends StatefulWidget {
   const RecycleBin({super.key});
@@ -469,7 +469,7 @@ class _RecycleBinState extends State<RecycleBin> {
         });
         await _saveNotesToPrefs();
         print(
-          '✅ Auto-deleted ${notesToDelete.length} old notes and associated files.',
+          'Auto-deleted ${notesToDelete.length} old notes and associated files.',
         );
       }
     } catch (e) {
@@ -661,7 +661,6 @@ class _RecycleBinState extends State<RecycleBin> {
                     Text(
                       'PenCraft Pro will automatically delete your notes in 30 days.',
                       style: Theme.of(context).textTheme.bodyMedium,
-                      textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 20),
                     Text(

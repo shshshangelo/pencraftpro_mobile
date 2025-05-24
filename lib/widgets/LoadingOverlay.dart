@@ -7,7 +7,7 @@ class LoadingOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.black.withOpacity(0.7),
+      color: Colors.black.withAlpha((0.7 * 255).round()),
       child: Center(
         child: Container(
           width: 200,
@@ -17,7 +17,9 @@ class LoadingOverlay extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Theme.of(context).colorScheme.shadow.withOpacity(0.3),
+                color: Theme.of(
+                  context,
+                ).colorScheme.shadow.withAlpha((0.3 * 255).round()),
                 blurRadius: 15,
                 spreadRadius: 3,
               ),
@@ -113,7 +115,7 @@ class __AnimatedSpinnerState extends State<_AnimatedSpinner>
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: colorScheme.primary.withOpacity(0.5),
+                      color: colorScheme.primary.withAlpha((0.5 * 255).round()),
                       blurRadius: 15,
                       spreadRadius: 3,
                     ),

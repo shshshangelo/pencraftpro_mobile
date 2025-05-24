@@ -1,3 +1,5 @@
+// ignore_for_file: library_private_types_in_public_api, use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -56,10 +58,13 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
   }
 
   Future<void> _changePassword() async {
+    if (!mounted) return;
+    final currentContext = context;
+
     if (!_formKey.currentState!.validate()) return;
 
     showDialog(
-      context: context,
+      context: currentContext,
       barrierDismissible: false,
       builder: (context) {
         return const Center(child: CircularProgressIndicator());
@@ -76,21 +81,23 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
       await user.reauthenticateWithCredential(cred);
       await user.updatePassword(_passwordController.text.trim());
 
-      if (mounted) Navigator.of(context).pop(); // close loading
+      if (!mounted) return;
+      Navigator.of(currentContext).pop(); // close loading
 
       _showSuccessDialog(); // show stay/log out options
     } catch (e) {
-      if (mounted) Navigator.of(context).pop(); // close loading
+      if (!mounted) return;
+      Navigator.of(currentContext).pop(); // close loading
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(currentContext).showSnackBar(
         SnackBar(
           content: Text(
             'Failed to change password. Please check your current password.',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onErrorContainer,
+              color: Theme.of(currentContext).colorScheme.onErrorContainer,
             ),
           ),
-          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          backgroundColor: Theme.of(currentContext).colorScheme.errorContainer,
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.all(8),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

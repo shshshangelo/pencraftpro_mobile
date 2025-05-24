@@ -1,7 +1,9 @@
+// ignore_for_file: deprecated_member_use, unused_field, unused_element, use_build_context_synchronously, unused_local_variable
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:pencraftpro/services/logout_service.dart';
+import 'package:pencraftpro/services/LogoutService.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
@@ -150,6 +152,33 @@ class _AccountSettingsState extends State<AccountSettings> {
       (info) => info.providerId == 'google.com',
     );
 
+    // Initialize new Google user in Firestore if needed
+    if (_isGoogleUser) {
+      final docRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid);
+      final docSnapshot = await docRef.get();
+
+      if (!docSnapshot.exists) {
+        try {
+          await docRef.set({
+            'email': currentUser.email,
+            'fullName': currentUser.displayName ?? '',
+            'role': '',
+            'createdAt': FieldValue.serverTimestamp(),
+            'isNameVerified': true,
+            'isRoleSelected': false,
+            'isIdVerified': false,
+            'isFirstTimeUser': true,
+            'photoUrl': currentUser.photoURL ?? '',
+          });
+          debugPrint('Initialized new Google user in Firestore');
+        } catch (e) {
+          debugPrint('Failed to initialize Google user in Firestore: $e');
+        }
+      }
+    }
+
     // Load data from SharedPreferences first
     setState(() {
       _fullName =
@@ -163,14 +192,14 @@ class _AccountSettingsState extends State<AccountSettings> {
       _isRoleSelected = prefs.getBool('isRoleSelected') ?? false;
       _isIdVerified = prefs.getBool('isIdVerified') ?? false;
       _isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
-      _selectedRole = prefs.getString('selectedRole') ?? 'Student';
+      _selectedRole = prefs.getString('selectedRole') ?? '';
       _lastNameChangeTimestamp = prefs.getInt('lastNameChangeTimestamp');
 
       // Set controller values
       _nameController.text = _fullName;
       if (_selectedRole == 'Student') {
         _idController.text = prefs.getString('studentId') ?? '';
-      } else {
+      } else if (_selectedRole == 'Teacher') {
         _teacherIdController.text = prefs.getString('teacherId') ?? '';
       }
     });
@@ -198,14 +227,22 @@ class _AccountSettingsState extends State<AccountSettings> {
           _isIdVerified = data['isIdVerified'] as bool? ?? _isIdVerified;
           _isFirstTimeUser =
               data['isFirstTimeUser'] as bool? ?? _isFirstTimeUser;
-          _selectedRole = data['role'] as String? ?? _selectedRole;
 
-          if (_selectedRole == 'Student') {
-            _idController.text =
-                data['idNumber'] as String? ?? _idController.text;
+          // Always load role from Firestore for both Google and non-Google users
+          if (data['role'] != null) {
+            _selectedRole = data['role'] as String;
           } else {
-            _teacherIdController.text =
-                data['idNumber'] as String? ?? _teacherIdController.text;
+            _selectedRole = 'Student';
+          }
+
+          // Load ID based on role
+          final idNumber = data['idNumber'] as String?;
+          if (idNumber != null) {
+            if (_selectedRole == 'Student') {
+              _idController.text = idNumber;
+            } else {
+              _teacherIdController.text = idNumber;
+            }
           }
         });
 
@@ -531,7 +568,7 @@ class _AccountSettingsState extends State<AccountSettings> {
       }, SetOptions(merge: true));
       debugPrint('Saved Google user to Firestore');
     } catch (e) {
-      debugPrint('⚠️ Failed to save Google user to Firestore: $e');
+      debugPrint('Failed to save Google user to Firestore: $e');
     }
   }
 
@@ -626,7 +663,7 @@ class _AccountSettingsState extends State<AccountSettings> {
       await docRef.set(dataToUpdate, SetOptions(merge: true));
       debugPrint('Firestore updated: fullName=$_fullName, role=$_selectedRole');
     } catch (e) {
-      debugPrint('⚠️ Failed to update Firestore: $e');
+      debugPrint('Failed to update Firestore: $e');
     }
   }
 
@@ -1380,15 +1417,29 @@ class _AccountSettingsState extends State<AccountSettings> {
               if (_isGoogleUser)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Full Name is linked to your Google account already.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Full Name is linked to your Google account already.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Full Name Verified',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.green,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              if (!_isNameVerified &&
+              if (!_isGoogleUser &&
+                  !_isNameVerified &&
                   (isLikelyEmail(_nameController.text.trim()) ||
                       _nameController.text.trim().isEmpty))
                 Padding(
@@ -1401,7 +1452,7 @@ class _AccountSettingsState extends State<AccountSettings> {
                     ),
                   ),
                 ),
-              if (_isNameVerified)
+              if (!_isGoogleUser && _isNameVerified)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
@@ -1545,7 +1596,9 @@ class _AccountSettingsState extends State<AccountSettings> {
                   ],
                 ),
               const SizedBox(height: 16),
-              if (_selectedRole == 'Student' && !_isIdVerified)
+              if (_selectedRole == 'Student' &&
+                  !_isIdVerified &&
+                  _isRoleSelected)
                 TextField(
                   controller: _idController,
                   keyboardType: TextInputType.number,
@@ -1582,7 +1635,9 @@ class _AccountSettingsState extends State<AccountSettings> {
                     ),
                   ),
                 ),
-              if (_selectedRole == 'Teacher' && !_isIdVerified)
+              if (_selectedRole == 'Teacher' &&
+                  !_isIdVerified &&
+                  _isRoleSelected)
                 TextField(
                   controller: _teacherIdController,
                   keyboardType: TextInputType.number,
@@ -1740,12 +1795,7 @@ class _AccountSettingsState extends State<AccountSettings> {
       return;
     }
 
-    String tempSelectedRole =
-        _selectedRole.isNotEmpty &&
-                ['Student', 'Teacher'].contains(_selectedRole)
-            ? _selectedRole
-            : 'Student';
-
+    String? tempSelectedRole;
     const List<String> roles = ['Student', 'Teacher'];
 
     showDialog(
@@ -1790,33 +1840,44 @@ class _AccountSettingsState extends State<AccountSettings> {
                   color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
-              content: DropdownButton<String>(
-                value: tempSelectedRole,
-                isExpanded: true,
-                dropdownColor:
-                    Theme.of(context).colorScheme.surfaceContainerHighest,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                items:
-                    roles.map((role) {
-                      return DropdownMenuItem<String>(
-                        value: role,
-                        child: Text(
-                          role,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setDialogState(() {
-                      tempSelectedRole = value;
-                    });
-                  }
-                },
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButton<String>(
+                    value: tempSelectedRole,
+                    isExpanded: true,
+                    hint: Text(
+                      'Choose your role',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    dropdownColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                    items:
+                        roles.map((role) {
+                          return DropdownMenuItem<String>(
+                            value: role,
+                            child: Text(
+                              role,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() {
+                          tempSelectedRole = value;
+                        });
+                      }
+                    },
+                  ),
+                ],
               ),
               actions: [
                 TextButton(
@@ -1829,80 +1890,98 @@ class _AccountSettingsState extends State<AccountSettings> {
                   ),
                 ),
                 ElevatedButton(
-                  onPressed: () async {
-                    Navigator.pop(context);
+                  onPressed:
+                      tempSelectedRole == null
+                          ? null
+                          : () async {
+                            Navigator.pop(context);
 
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (context) {
-                        return AlertDialog(
-                          backgroundColor:
-                              Theme.of(context).colorScheme.surface,
-                          title: Text(
-                            'Confirm Role Selection',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                          ),
-                          content: Text(
-                            'Are you sure you want to select "$tempSelectedRole" as your role?\n\nYou cannot change it after ID verification.',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color:
-                                  Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: Text(
-                                'Cancel',
-                                style: TextStyle(
-                                  color:
-                                      Theme.of(context).colorScheme.onSurface,
-                                ),
-                              ),
-                            ),
-                            ElevatedButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    Theme.of(context).colorScheme.primary,
-                                foregroundColor:
-                                    Theme.of(context).colorScheme.onPrimary,
-                              ),
-                              child: Text(
-                                'Confirm',
-                                style: TextStyle(
-                                  color:
-                                      Theme.of(context).colorScheme.onPrimary,
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    );
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (context) {
+                                return AlertDialog(
+                                  backgroundColor:
+                                      Theme.of(context).colorScheme.surface,
+                                  title: Text(
+                                    'Confirm Role Selection',
+                                    style: TextStyle(
+                                      color:
+                                          Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface,
+                                    ),
+                                  ),
+                                  content: Text(
+                                    'Are you sure you want to select "$tempSelectedRole" as your role?\n\nYou cannot change it after ID verification.',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color:
+                                          Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed:
+                                          () => Navigator.pop(context, false),
+                                      child: Text(
+                                        'Cancel',
+                                        style: TextStyle(
+                                          color:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.onSurface,
+                                        ),
+                                      ),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed:
+                                          () => Navigator.pop(context, true),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                        foregroundColor:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.onPrimary,
+                                      ),
+                                      child: Text(
+                                        'Confirm',
+                                        style: TextStyle(
+                                          color:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.onPrimary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
 
-                    if (confirm == true) {
-                      setState(() {
-                        _selectedRole = tempSelectedRole;
-                        _isRoleSelected = true;
-                        _isIdVerified = false;
-                        _idController.clear();
-                        _teacherIdController.clear();
-                      });
-                      await _syncState();
+                            if (confirm == true && tempSelectedRole != null) {
+                              setState(() {
+                                _selectedRole = tempSelectedRole!;
+                                _isRoleSelected = true;
+                                _isIdVerified = false;
+                                _idController.clear();
+                                _teacherIdController.clear();
+                              });
+                              await _syncState();
 
-                      if (_isGoogleUser && _isRoleSelected && _isIdVerified) {
-                        await _showLoadingSpinner(
-                          'Please wait while we are creating your PenCraft Pro account.',
-                        );
-                      }
-                    }
-                  },
+                              if (_isGoogleUser &&
+                                  _isRoleSelected &&
+                                  _isIdVerified) {
+                                await _showLoadingSpinner(
+                                  'Please wait while we are creating your PenCraft Pro account.',
+                                );
+                              }
+                            }
+                          },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Theme.of(context).colorScheme.onPrimary,
@@ -2044,19 +2123,6 @@ class _AccountSettingsState extends State<AccountSettings> {
       );
     } catch (e) {
       if (!mounted) return;
-      /*
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Unable to update profile picture.',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onErrorContainer,
-            ),
-          ),
-          backgroundColor: Theme.of(context).colorScheme.errorContainer,
-        ),
-      );
-      */
     }
   }
 }

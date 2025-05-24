@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, unused_element, unused_local_variable
+
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'dart:math' as math;
@@ -1584,7 +1586,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                         value: 'camera',
                         child: Text('Take Picture'),
                       ),
-                      PopupMenuItem(value: 'save', child: Text('Save as JPEG')),
+                      PopupMenuItem(value: 'save', child: Text('Save as PNG')),
                     ],
               ),
             ],
@@ -1865,7 +1867,7 @@ class _DrawingCanvasPageState extends State<DrawingCanvasPage> {
                                     });
                                     _clearCanvas();
                                   }
-                                  : null, // Disable button when no content
+                                  : null, // Disable button when no drawing or content
                         ),
                       ),
                       if (_images.isNotEmpty)

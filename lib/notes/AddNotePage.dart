@@ -1,4 +1,4 @@
-// ignore_for_file: unused_import, unused_element
+// ignore_for_file: unused_import, unused_element, body_might_complete_normally_catch_error, unused_local_variable, use_build_context_synchronously, deprecated_member_use, library_private_types_in_public_api, unused_field
 import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -116,7 +116,7 @@ class _AddNotePageState extends State<AddNotePage> {
   String? _selectedFolderId;
   String? _selectedFolderName;
   // Add new list to track element order
-  final List<Map<String, dynamic>> _elementOrder = [];
+  List<Map<String, dynamic>> _elementOrder = [];
   // Add map to store checklist controllers
   final Map<int, TextEditingController> _checklistControllers = {};
 
@@ -150,11 +150,6 @@ class _AddNotePageState extends State<AddNotePage> {
   // Track the initial state of the note for change detection
   Map<String, dynamic>? _initialNoteState;
 
-  // Add new font family variables for different elements
-  // String _titleFontFamily = 'Roboto';
-  //String _contentFontFamily = 'Roboto';
-  //String _checklistFontFamily = 'Roboto';
-
   @override
   void initState() {
     super.initState();
@@ -163,8 +158,6 @@ class _AddNotePageState extends State<AddNotePage> {
     _titleController.text = widget.title ?? '';
     _isPinned = widget.isPinned;
     _reminder = widget.reminder;
-    _imagePaths = widget.imagePaths?.toList() ?? [];
-    _voiceNotePath = widget.voiceNote;
     _labels = widget.labels?.toList() ?? [];
     _isArchived = widget.isArchived;
 
@@ -181,16 +174,14 @@ class _AddNotePageState extends State<AddNotePage> {
         }
       }
     }
-    // Add voice note
-    if (widget.voiceNote != null) {
-      _elementOrder.add({'type': 'voice', 'path': widget.voiceNote});
-    }
-    // Add images
-    if (widget.imagePaths != null) {
-      for (var path in widget.imagePaths!) {
-        _elementOrder.add({'type': 'image', 'path': path});
+
+    _initializeMediaFiles().then((_) {
+      if (mounted) {
+        setState(() {
+          _initialNoteState = _getCurrentNoteState();
+        });
       }
-    }
+    });
 
     if (widget.noteId != null && widget.folderId != null) {
       _loadFolderName(widget.folderId!);
@@ -261,16 +252,134 @@ class _AddNotePageState extends State<AddNotePage> {
     _titleController.addListener(_handleTextChange);
     _contentController.addListener(_handleTextChange);
 
-    // 🔥 ADDITION para sa Collaborators
     _collaboratorEmails = widget.collaboratorEmails?.toList() ?? [];
     if (widget.noteId != null) {
       _fetchCollaboratorsFromFirestore();
-      // Add real-time listener for note updates
       _setupNoteListener();
     }
+  }
 
-    // Store the initial state after all fields are loaded
-    _initialNoteState = _getCurrentNoteState();
+  Future<void> _initializeMediaFiles() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+
+      // Initialize images from Firestore
+      if (widget.noteId != null) {
+        final noteDoc =
+            await FirebaseFirestore.instance
+                .collection('notes')
+                .doc(widget.noteId)
+                .get();
+
+        if (noteDoc.exists) {
+          final data = noteDoc.data();
+          if (data != null) {
+            // Handle base64 images
+            List<String> newImagePaths = [];
+            List<String> base64Images = List<String>.from(
+              data['base64Images'] ?? [],
+            );
+
+            for (var i = 0; i < base64Images.length; i++) {
+              try {
+                final String base64Image = base64Images[i];
+                if (base64Image.isNotEmpty) {
+                  final String fileName = 'image_${widget.noteId}_$i.jpg';
+                  final String filePath = '${tempDir.path}/$fileName';
+
+                  // Check if file already exists
+                  final File imageFile = File(filePath);
+                  // Always decode and write the image file (overwrite if exists)
+                  try {
+                    final imageBytes = base64Decode(base64Image);
+                    await imageFile.writeAsBytes(imageBytes);
+                    debugPrint('Successfully saved image: $fileName');
+                  } catch (e) {
+                    debugPrint('Error decoding base64 image: $e');
+                    continue;
+                  }
+                  newImagePaths.add(filePath);
+                }
+              } catch (e) {
+                debugPrint('Error processing image $i: $e');
+              }
+            }
+
+            // Handle base64 voice note
+            String? newVoiceNotePath;
+            if (data['base64VoiceNote'] != null) {
+              try {
+                final String base64VoiceNote = data['base64VoiceNote'];
+                final String fileName = 'voice_${widget.noteId}.m4a';
+                final String filePath = '${tempDir.path}/$fileName';
+
+                final File voiceFile = File(filePath);
+                if (!await voiceFile.exists()) {
+                  await voiceFile.writeAsBytes(base64Decode(base64VoiceNote));
+                }
+                newVoiceNotePath = filePath;
+              } catch (e) {
+                debugPrint('Error decoding base64 voice note: $e');
+              }
+            }
+
+            if (data['elementOrder'] != null) {
+              _elementOrder = List<Map<String, dynamic>>.from(
+                data['elementOrder'],
+              );
+              // Map 'data' to 'path' for images if needed
+              int imageIdx = 0;
+              for (var element in _elementOrder) {
+                if (element['type'] == 'image' &&
+                    (element['path'] == null ||
+                        element['path'].toString().isEmpty)) {
+                  if (imageIdx < newImagePaths.length) {
+                    element['path'] = newImagePaths[imageIdx];
+                    imageIdx++;
+                  }
+                }
+              }
+            } else {
+              // No elementOrder present; leave _elementOrder empty and log a warning
+              debugPrint(
+                'Warning: No elementOrder found for this note. Element order will be empty.',
+              );
+            }
+
+            setState(() {
+              _imagePaths = newImagePaths;
+              _voiceNotePath = newVoiceNotePath;
+            });
+          }
+        }
+      } else {
+        // Initialize from widget parameters for new notes
+        setState(() {
+          _imagePaths = widget.imagePaths?.toList() ?? [];
+          _voiceNotePath = widget.voiceNote;
+
+          // Clear and rebuild element order
+          _elementOrder.clear();
+
+          // Add checklist items (at the end)
+          for (var i = 0; i < _checklistItems.length; i++) {
+            _elementOrder.add({'type': 'checklist', 'index': i});
+          }
+
+          // Add voice note if exists (after checklist items)
+          if (_voiceNotePath != null) {
+            _elementOrder.add({'type': 'voice', 'path': _voiceNotePath});
+          }
+
+          // Add images (after voice note)
+          for (var path in _imagePaths) {
+            _elementOrder.add({'type': 'image', 'path': path});
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Error initializing media files: $e');
+    }
   }
 
   StreamSubscription? _noteListener;
@@ -278,62 +387,240 @@ class _AddNotePageState extends State<AddNotePage> {
   void _setupNoteListener() {
     if (widget.noteId == null) return;
 
+    if (_noteListener != null) {
+      _noteListener!.cancel();
+    }
+
     _noteListener = FirebaseFirestore.instance
         .collection('notes')
         .doc(widget.noteId)
         .snapshots()
-        .listen((snapshot) {
+        .listen((snapshot) async {
           if (!snapshot.exists) return;
 
           final data = snapshot.data()!;
           final currentUser = FirebaseAuth.instance.currentUser;
           if (currentUser == null) return;
 
-          // Only update if the change was made by another user
-          if (data['lastModifiedBy'] != currentUser.uid) {
-            setState(() {
-              _titleController.text = data['title'] ?? '';
-              if (data['contentJson'] != null &&
-                  data['contentJson'].isNotEmpty) {
-                final content = data['contentJson'][0];
-                _contentController.text = content['text'] ?? '';
-                _selectedFontWeight =
-                    content['bold'] == true
-                        ? FontWeight.bold
-                        : FontWeight.normal;
-                _isItalic = content['italic'] == true;
-                _isUnderline = content['underline'] == true;
-                _isStrikethrough = content['strikethrough'] == true;
-                _selectedFontFamily = content['fontFamily'] ?? 'Roboto';
-                _contentFontSize =
-                    (content['fontSize'] as num?)?.toDouble() ?? 16.0;
-                if (content['checklistItems'] != null) {
-                  _checklistItems = List<Map<String, dynamic>>.from(
-                    content['checklistItems'],
+          // Get modifier information for display
+          String modifierEmail = data['lastModifiedByEmail'] ?? 'Someone';
+          final lastModifiedBy = data['lastModifiedBy'];
+          final lastModifiedTime =
+              data['updatedAt'] != null
+                  ? DateTime.parse(data['updatedAt']).toLocal()
+                  : DateTime.now();
+          bool wasModifiedByCurrentUser = lastModifiedBy == currentUser.uid;
+
+          // Only show notification if modified by someone else
+          if (!wasModifiedByCurrentUser) {
+            // Show toast of the update
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'This note was updated by $modifierEmail at ${DateFormat('hh:mm a').format(lastModifiedTime)}',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                  ),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  duration: const Duration(seconds: 3),
+                  behavior: SnackBarBehavior.floating,
+                  margin: const EdgeInsets.all(8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              );
+            }
+          }
+
+          // Always update the UI with the latest data (improved real-time sync)
+          try {
+            // Get the app's temporary directory
+            final tempDir = await getTemporaryDirectory();
+
+            // Handle base64 images
+            List<String> newImagePaths = [];
+            List<String> base64Images = List<String>.from(
+              data['base64Images'] ?? [],
+            );
+            for (var i = 0; i < base64Images.length; i++) {
+              try {
+                final String base64Image = base64Images[i];
+                if (base64Image.isEmpty) continue;
+
+                final String fileName = 'image_${widget.noteId}_$i.jpg';
+                final String filePath = '${tempDir.path}/$fileName';
+
+                final File imageFile = File(filePath);
+                try {
+                  await imageFile.writeAsBytes(base64Decode(base64Image));
+                  newImagePaths.add(filePath);
+                } catch (e) {
+                  debugPrint('Error writing image file: $e');
+                }
+              } catch (e) {
+                debugPrint('Error decoding base64 image: $e');
+              }
+            }
+
+            // Handle base64 voice note
+            String? newVoiceNotePath;
+            if (data['base64VoiceNote'] != null) {
+              try {
+                final String base64VoiceNote = data['base64VoiceNote'];
+                final String fileName = 'voice_${widget.noteId}.m4a';
+                final String filePath = '${tempDir.path}/$fileName';
+
+                final File voiceFile = File(filePath);
+                await voiceFile.writeAsBytes(base64Decode(base64VoiceNote));
+                newVoiceNotePath = filePath;
+              } catch (e) {
+                debugPrint('Error decoding base64 voice note: $e');
+              }
+            }
+
+            final elementOrder = data['elementOrder'] ?? [];
+
+            // Always update the collaboratorEmails list to ensure it's in sync
+            // This ensures all users have the same collaborator information
+            final updatedCollaboratorEmails = List<String>.from(
+              data['collaboratorEmails'] ?? [],
+            );
+
+            // If changes were made by others, update the UI
+            if (data['lastModifiedBy'] != currentUser.uid ||
+                !_areCollaboratorListsEqual(
+                  _collaboratorEmails,
+                  updatedCollaboratorEmails,
+                )) {
+              setState(() {
+                _titleController.text = data['title'] ?? '';
+                if (data['contentJson'] != null &&
+                    data['contentJson'].isNotEmpty) {
+                  final content = data['contentJson'][0];
+                  _contentController.text = content['text'] ?? '';
+                  _selectedFontWeight =
+                      content['bold'] == true
+                          ? FontWeight.bold
+                          : FontWeight.normal;
+                  _isItalic = content['italic'] == true;
+                  _isUnderline = content['underline'] == true;
+                  _isStrikethrough = content['strikethrough'] == true;
+                  _selectedFontFamily = content['fontFamily'] ?? 'Roboto';
+                  _contentFontSize =
+                      (content['fontSize'] as num?)?.toDouble() ?? 16.0;
+                  if (content['checklistItems'] != null) {
+                    _checklistItems = List<Map<String, dynamic>>.from(
+                      content['checklistItems'],
+                    );
+                  }
+                }
+                _isPinned = data['isPinned'] ?? false;
+                _reminder =
+                    data['reminder'] != null
+                        ? DateTime.parse(data['reminder'])
+                        : null;
+                _imagePaths = newImagePaths;
+                _voiceNotePath = newVoiceNotePath;
+                _labels = List<String>.from(data['labels'] ?? []);
+                _isArchived = data['isArchived'] ?? false;
+                _selectedFolderId = data['folderId'];
+                if (data['folderColor'] != null) {
+                  _folderColorMap[_selectedFolderId!] = Color(
+                    data['folderColor'],
                   );
                 }
-              }
-              _isPinned = data['isPinned'] ?? false;
-              _reminder =
-                  data['reminder'] != null
-                      ? DateTime.parse(data['reminder'])
-                      : null;
-              _imagePaths = List<String>.from(data['imagePaths'] ?? []);
-              _voiceNotePath = data['voiceNote'];
-              _labels = List<String>.from(data['labels'] ?? []);
-              _isArchived = data['isArchived'] ?? false;
-              _selectedFolderId = data['folderId'];
-              if (data['folderColor'] != null) {
-                _folderColorMap[_selectedFolderId!] = Color(
-                  data['folderColor'],
+
+                // Always update collaborator list from server
+                _collaboratorEmails = updatedCollaboratorEmails;
+                _elementOrder = List<Map<String, dynamic>>.from(elementOrder);
+
+                // Update audio player if voice note changed
+                if (newVoiceNotePath != null) {
+                  _audioPlayer.setFilePath(newVoiceNotePath).catchError((e) {
+                    debugPrint('Error setting audio file path: $e');
+                  });
+                }
+              });
+            }
+
+            // If our email is no longer in collaboratorEmails, we've been removed
+            final userEmail = currentUser.email?.toLowerCase().trim();
+            final isStillCollaborator =
+                data['collaboratorEmails']?.any(
+                  (email) => email.toString().toLowerCase().trim() == userEmail,
+                ) ??
+                false;
+            final isOwner = data['owner'] == currentUser.uid;
+
+            if (!isStillCollaborator && !isOwner) {
+              // We've been removed from the collaboration, exit the note
+              if (mounted) {
+                // Remove note from local storage
+                try {
+                  final prefs = await SharedPreferences.getInstance();
+                  final String? notesString = prefs.getString('notes');
+                  if (notesString != null) {
+                    List<dynamic> notesList = jsonDecode(notesString);
+                    notesList =
+                        notesList
+                            .where((note) => note['id'] != widget.noteId)
+                            .toList();
+                    await prefs.setString('notes', jsonEncode(notesList));
+                  }
+                } catch (e) {
+                  debugPrint('Error removing note from local storage: $e');
+                }
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'You are no longer a collaborator on this note',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onError,
+                      ),
+                    ),
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                    behavior: SnackBarBehavior.floating,
+                    margin: const EdgeInsets.all(8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                 );
+
+                // Return to previous screen
+                Navigator.pop(context, {
+                  'id': widget.noteId,
+                  'isNew': false,
+                  'delete': false,
+                  'updated': true,
+                  'leftCollaboration': true,
+                });
               }
-              _collaboratorEmails = List<String>.from(
-                data['collaboratorEmails'] ?? [],
-              );
-            });
+            }
+          } catch (e) {
+            debugPrint('Error updating note from snapshot: $e');
           }
         });
+  }
+
+  // Helper method to compare collaborator lists case-insensitively
+  bool _areCollaboratorListsEqual(List<String> list1, List<String> list2) {
+    if (list1.length != list2.length) return false;
+
+    final normalizedList1 =
+        list1.map((e) => e.toLowerCase().trim()).toList()..sort();
+    final normalizedList2 =
+        list2.map((e) => e.toLowerCase().trim()).toList()..sort();
+
+    for (var i = 0; i < normalizedList1.length; i++) {
+      if (normalizedList1[i] != normalizedList2[i]) return false;
+    }
+
+    return true;
   }
 
   Future<void> _fetchCollaboratorsFromFirestore() async {
@@ -351,7 +638,7 @@ class _AddNotePageState extends State<AddNotePage> {
         });
       }
     } catch (e) {
-      debugPrint('❌ Failed to fetch collaborators: $e');
+      debugPrint('Failed to fetch collaborators: $e');
     }
   }
 
@@ -476,6 +763,35 @@ class _AddNotePageState extends State<AddNotePage> {
         }
       }
 
+      // Convert images to base64
+      List<String> base64Images = [];
+      for (String imagePath in _imagePaths) {
+        try {
+          File imageFile = File(imagePath);
+          if (await imageFile.exists()) {
+            List<int> imageBytes = await imageFile.readAsBytes();
+            String base64Image = base64Encode(imageBytes);
+            base64Images.add(base64Image);
+          }
+        } catch (e) {
+          debugPrint('Error converting image to base64: $e');
+        }
+      }
+
+      // Convert voice note to base64
+      String? base64VoiceNote;
+      if (_voiceNotePath != null) {
+        try {
+          File voiceFile = File(_voiceNotePath!);
+          if (await voiceFile.exists()) {
+            List<int> voiceBytes = await voiceFile.readAsBytes();
+            base64VoiceNote = base64Encode(voiceBytes);
+          }
+        } catch (e) {
+          debugPrint('Error converting voice note to base64: $e');
+        }
+      }
+
       // Save to local storage first
       final prefs = await SharedPreferences.getInstance();
       final String? notesString = prefs.getString('notes');
@@ -504,8 +820,124 @@ class _AddNotePageState extends State<AddNotePage> {
               )
               .toList();
 
-      // Create a list to store the element order
-      final List<Map<String, dynamic>> elementOrder = [];
+      // Careful handling of element order to preserve media files during collaboration
+      List<Map<String, dynamic>> elementOrder = [];
+
+      // First get the existing element order from Firestore if this is a collaborative edit
+      if (widget.noteId != null) {
+        try {
+          final noteRef = FirebaseFirestore.instance
+              .collection('notes')
+              .doc(widget.noteId);
+          final noteDoc = await noteRef.get();
+
+          if (noteDoc.exists) {
+            // Get existing element order from Firestore
+            final existingData = noteDoc.data();
+            if (existingData != null && existingData['elementOrder'] != null) {
+              final existingOrder = List<Map<String, dynamic>>.from(
+                existingData['elementOrder'],
+              );
+
+              // Check if we need to preserve voice notes and images
+              final bool hasExistingVoice = existingOrder.any(
+                (element) => element['type'] == 'voice',
+              );
+              final List<Map<String, dynamic>> existingImages =
+                  existingOrder
+                      .where((element) => element['type'] == 'image')
+                      .toList();
+
+              print(
+                'Existing order has voice: $hasExistingVoice, images: ${existingImages.length}',
+              );
+
+              // If local data matches remote data, use our current _elementOrder
+              if (_elementOrder.isNotEmpty &&
+                  (_elementOrder.length >= existingOrder.length ||
+                      (_voiceNotePath != null && hasExistingVoice) ||
+                      (_imagePaths.length >= existingImages.length))) {
+                print(
+                  'Using local _elementOrder: ${_elementOrder.length} elements',
+                );
+                elementOrder = List<Map<String, dynamic>>.from(_elementOrder);
+
+                // Update data references for serialization
+                for (var i = 0; i < elementOrder.length; i++) {
+                  final element = elementOrder[i];
+                  // Convert local paths to base64 for media elements
+                  if (element['type'] == 'voice' &&
+                      element['path'] != null &&
+                      base64VoiceNote != null) {
+                    element['data'] = base64VoiceNote;
+                    element.remove('path');
+                  } else if (element['type'] == 'image' &&
+                      element['path'] != null) {
+                    final imagePath = element['path'];
+                    final imageIndex = _imagePaths.indexOf(imagePath);
+                    if (imageIndex >= 0 && imageIndex < base64Images.length) {
+                      element['data'] = base64Images[imageIndex];
+                      element.remove('path');
+                    }
+                  }
+                }
+              } else {
+                // Preserve existing order but update with our local changes
+                elementOrder = List<Map<String, dynamic>>.from(existingOrder);
+
+                // Add new checklist items or update existing ones
+                int checklistIndex = 0;
+                final existingChecklist =
+                    elementOrder
+                        .where((e) => e['type'] == 'checklist')
+                        .toList();
+
+                // Remove existing checklist items from element order
+                elementOrder.removeWhere((e) => e['type'] == 'checklist');
+
+                // Add updated checklist items
+                for (var i = 0; i < filteredChecklistItems.length; i++) {
+                  elementOrder.add({'type': 'checklist', 'index': i});
+                  checklistIndex++;
+                }
+
+                print(
+                  'Preserved element order with ${elementOrder.length} elements',
+                );
+              }
+
+              // Make sure we preserve voice and images if they exist
+              bool hasVoiceInOrder = elementOrder.any(
+                (element) => element['type'] == 'voice',
+              );
+              if (!hasVoiceInOrder && base64VoiceNote != null) {
+                elementOrder.add({'type': 'voice', 'data': base64VoiceNote});
+              }
+
+              // Handle images more carefully
+              final imageElementsCount =
+                  elementOrder.where((e) => e['type'] == 'image').length;
+              if (imageElementsCount < base64Images.length) {
+                // Add missing images
+                for (var i = imageElementsCount; i < base64Images.length; i++) {
+                  elementOrder.add({'type': 'image', 'data': base64Images[i]});
+                }
+              }
+
+              // Finish processing the element order here instead of returning
+              print(
+                'Finished processing element order for Firebase: ${elementOrder.length} elements',
+              );
+            }
+          }
+        } catch (e) {
+          debugPrint('Error getting existing element order: $e');
+          // Continue with fallback approach
+        }
+      }
+
+      // Fallback: Create a new element order from scratch
+      print('Creating new element order from scratch');
 
       // Add checklist items first
       for (var i = 0; i < filteredChecklistItems.length; i++) {
@@ -513,16 +945,21 @@ class _AddNotePageState extends State<AddNotePage> {
       }
 
       // Add voice note if exists
-      if (_voiceNotePath != null) {
-        elementOrder.add({'type': 'voice', 'path': _voiceNotePath});
+      if (base64VoiceNote != null) {
+        elementOrder.add({'type': 'voice', 'data': base64VoiceNote});
       }
 
-      // Add images last
-      for (var path in _imagePaths) {
-        elementOrder.add({'type': 'image', 'path': path});
+      // Add images
+      for (var i = 0; i < base64Images.length; i++) {
+        elementOrder.add({'type': 'image', 'data': base64Images[i]});
       }
 
-      final noteData = {
+      // Add timestamp and modifier information for real-time collaboration
+      final now = DateTime.now();
+      final timestamp = now.toIso8601String();
+
+      // Create base note data without FieldValue operations (for local storage)
+      final localNoteData = {
         'id': noteId,
         'title': _titleController.text.trim(),
         'contentJson': [
@@ -540,8 +977,8 @@ class _AddNotePageState extends State<AddNotePage> {
         'isPinned': _isPinned,
         'isDeleted': false,
         'reminder': _reminder?.toIso8601String(),
-        'imagePaths': _imagePaths,
-        'voiceNote': _voiceNotePath,
+        'base64Images': base64Images,
+        'base64VoiceNote': base64VoiceNote,
         'labels': _labels,
         'isArchived': _isArchived,
         'fontFamily': _selectedFontFamily,
@@ -558,35 +995,100 @@ class _AddNotePageState extends State<AddNotePage> {
         'collaborators':
             existingNote == null ? [currentUser.uid] : existingCollaborators,
         'collaboratorEmails': _collaboratorEmails,
-        'createdAt':
-            existingNote?['createdAt'] ?? DateTime.now().toIso8601String(),
-        'updatedAt': DateTime.now().toIso8601String(),
+        'createdAt': existingNote?['createdAt'] ?? timestamp,
+        'updatedAt': timestamp,
         'lastModifiedBy': currentUser.uid,
-        'elementOrder': elementOrder, // Add the element order to the note data
+        'lastModifiedByEmail': currentUser.email ?? 'Unknown',
+        'lastModifiedAt': timestamp,
+        'elementOrder': elementOrder,
+        // Don't include editHistory for local storage since we're not using FieldValue for it
+        'editHistory': existingNote?['editHistory'] ?? [],
       };
+
+      // Add the current edit to the local history
+      localNoteData['editHistory'].add({
+        'userId': currentUser.uid,
+        'userEmail': currentUser.email,
+        'timestamp': timestamp,
+        'action': 'edit',
+      });
 
       // Update local storage
       final existingIndex = notes.indexWhere((note) => note['id'] == noteId);
       if (existingIndex != -1) {
-        notes[existingIndex] = noteData;
+        notes[existingIndex] = localNoteData;
       } else {
-        notes.add(noteData);
+        notes.add(localNoteData);
       }
       await prefs.setString('notes', jsonEncode(notes));
+
+      // Create a separate object for Firestore with FieldValue operations
+      final firestoreNoteData = {
+        'id': noteId,
+        'title': _titleController.text.trim(),
+        'contentJson': [
+          {
+            'text': _contentController.text,
+            'bold': _selectedFontWeight == FontWeight.bold,
+            'italic': _isItalic,
+            'underline': _isUnderline,
+            'strikethrough': _isStrikethrough,
+            'fontFamily': _selectedFontFamily,
+            'fontSize': _contentFontSize,
+            'checklistItems': filteredChecklistItems,
+          },
+        ],
+        'isPinned': _isPinned,
+        'isDeleted': false,
+        'reminder': _reminder?.toIso8601String(),
+        'base64Images': base64Images,
+        'base64VoiceNote': base64VoiceNote,
+        'labels': _labels,
+        'isArchived': _isArchived,
+        'fontFamily': _selectedFontFamily,
+        'folderId': _selectedFolderId,
+        'folderColor':
+            _selectedFolderId != null
+                ? _folderColorMap[_selectedFolderId]?.value
+                : null,
+        'owner':
+            widget.noteId == null
+                ? currentUser.uid
+                : existingNote?['owner'] ?? currentUser.uid,
+        'ownerEmail': currentUser.email ?? 'no-email',
+        'collaborators':
+            existingNote == null ? [currentUser.uid] : existingCollaborators,
+        'collaboratorEmails': _collaboratorEmails,
+        'createdAt': existingNote?['createdAt'] ?? timestamp,
+        'updatedAt': timestamp,
+        'lastModifiedBy': currentUser.uid,
+        'lastModifiedByEmail': currentUser.email ?? 'Unknown',
+        'lastModifiedAt': timestamp,
+        'elementOrder': elementOrder,
+        // Use FieldValue for Firestore
+        'editHistory': FieldValue.arrayUnion([
+          {
+            'userId': currentUser.uid,
+            'userEmail': currentUser.email,
+            'timestamp': timestamp,
+            'action': 'edit',
+          },
+        ]),
+      };
 
       // Try to save to Firestore (will be queued if offline)
       final noteRef = FirebaseFirestore.instance
           .collection('notes')
           .doc(noteId);
-      await noteRef.set(noteData, SetOptions(merge: true));
+      await noteRef.set(firestoreNoteData, SetOptions(merge: true));
 
-      debugPrint('✅ Note saved locally and queued for Firestore sync: $noteId');
+      debugPrint('Note saved locally and queued for Firestore sync: $noteId');
 
       widget.onSave(
         id: noteId,
-        title: noteData['title'] as String,
+        title: localNoteData['title'] as String,
         contentJson:
-            (noteData['contentJson'] as List).cast<Map<String, dynamic>>(),
+            (localNoteData['contentJson'] as List).cast<Map<String, dynamic>>(),
         isPinned: _isPinned,
         isDeleted: false,
         reminder: _reminder,
@@ -596,7 +1098,7 @@ class _AddNotePageState extends State<AddNotePage> {
         isArchived: _isArchived,
         fontFamily: _selectedFontFamily,
         folderId: _selectedFolderId,
-        folderColor: noteData['folderColor'] as int?,
+        folderColor: localNoteData['folderColor'] as int?,
         collaboratorEmails: _collaboratorEmails,
       );
     } catch (e) {
@@ -867,8 +1369,8 @@ class _AddNotePageState extends State<AddNotePage> {
       final scheduledDate = tz.TZDateTime.from(dateTime, philippines);
       final now = tz.TZDateTime.now(philippines);
 
-      debugPrint('⏰ Current time: $now');
-      debugPrint('⏰ Scheduled time: $scheduledDate');
+      debugPrint('Current time: $now');
+      debugPrint('Scheduled time: $scheduledDate');
 
       if (scheduledDate.isBefore(now)) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -892,7 +1394,7 @@ class _AddNotePageState extends State<AddNotePage> {
 
       // Request notification permission
       final notificationPermission = await Permission.notification.request();
-      debugPrint('📱 Notification permission status: $notificationPermission');
+      debugPrint('Notification permission status: $notificationPermission');
 
       if (!notificationPermission.isGranted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -928,7 +1430,7 @@ class _AddNotePageState extends State<AddNotePage> {
         final scheduleExactAlarmStatus =
             await Permission.scheduleExactAlarm.request();
         debugPrint(
-          '⏰ Schedule exact alarm permission status: $scheduleExactAlarmStatus',
+          'Schedule exact alarm permission status: $scheduleExactAlarmStatus',
         );
 
         if (!scheduleExactAlarmStatus.isGranted) {
@@ -996,7 +1498,7 @@ class _AddNotePageState extends State<AddNotePage> {
         );
       });
 
-      debugPrint('✅ Notification scheduled successfully for $scheduledDate');
+      debugPrint('Notification scheduled successfully for $scheduledDate');
 
       // Save notification ID for later reference
       final prefs = await SharedPreferences.getInstance();
@@ -1053,11 +1555,11 @@ class _AddNotePageState extends State<AddNotePage> {
       final initialized = await _notificationsPlugin.initialize(
         initSettings,
         onDidReceiveNotificationResponse: (details) {
-          debugPrint('📱 Notification clicked: ${details.payload}');
+          debugPrint('Notification clicked: ${details.payload}');
         },
       );
 
-      debugPrint('📱 Notifications initialized: $initialized');
+      debugPrint('Notifications initialized: $initialized');
 
       // Create notification channel for Android
       const androidChannel = AndroidNotificationChannel(
@@ -1076,7 +1578,7 @@ class _AddNotePageState extends State<AddNotePage> {
           >()
           ?.createNotificationChannel(androidChannel);
     } catch (e) {
-      debugPrint('❌ Error initializing notifications: $e');
+      debugPrint('Error initializing notifications: $e');
     }
   }
 
@@ -1220,7 +1722,10 @@ class _AddNotePageState extends State<AddNotePage> {
         context: context,
         builder:
             (context) => AlertDialog(
-              title: const Text('Voice Note Already Exists'),
+              title: const Text(
+                'Voice Note Already Exists',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               content: const Text(
                 'There is already a voice note attached to this note. Would you like to replace it?',
               ),
@@ -1244,17 +1749,21 @@ class _AddNotePageState extends State<AddNotePage> {
                       if (await existingFile.exists()) {
                         await existingFile.delete();
                       }
-                      // Clear the voice note path and remove from element order
-                      setState(() {
-                        _voiceNotePath = null;
-                        // Remove the old voice note from element order using the stored path
-                        _elementOrder.removeWhere(
-                          (element) =>
-                              element['type'] == 'voice' &&
-                              element['path'] == oldVoiceNotePath,
-                        );
-                      });
                       Navigator.pop(context, true);
+                      // Clear the voice note path and remove from element order
+                      // Do this after navigation to avoid concurrent modification
+                      if (mounted) {
+                        setState(() {
+                          _voiceNotePath = null;
+                          // Create a new list without voice elements
+                          _elementOrder =
+                              _elementOrder
+                                  .where(
+                                    (element) => element['type'] != 'voice',
+                                  )
+                                  .toList();
+                        });
+                      }
                     } catch (e) {
                       debugPrint('Error deleting existing voice note: $e');
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -1403,8 +1912,10 @@ class _AddNotePageState extends State<AddNotePage> {
 
       if (await File(path).exists()) {
         setState(() {
+          // Clear any existing voice notes from element order
+          _elementOrder.removeWhere((element) => element['type'] == 'voice');
           _voiceNotePath = path;
-          // Add to element order at the end
+          // Add new voice note to element order at the end
           _elementOrder.add({'type': 'voice', 'path': path});
           if (_titleController.text.trim().isEmpty) {
             _titleController.text = 'Voice Note $_voiceNoteCounter';
@@ -1496,7 +2007,26 @@ class _AddNotePageState extends State<AddNotePage> {
   }
 
   Widget _buildVoiceNotePlayer() {
-    if (_voiceNotePath == null) return SizedBox.shrink();
+    if (_voiceNotePath == null || !File(_voiceNotePath!).existsSync()) {
+      // Clean up element order if voice note file doesn't exist
+      Future.microtask(() {
+        if (mounted) {
+          setState(() {
+            _voiceNotePath = null;
+            // Remove all elements from the list while keeping the same reference
+            _elementOrder.removeWhere((element) => true);
+            // Add back all elements except voice notes
+            _elementOrder.addAll([
+              ..._checklistItems.asMap().entries.map(
+                (e) => {'type': 'checklist', 'index': e.key},
+              ),
+              ..._imagePaths.map((path) => {'type': 'image', 'path': path}),
+            ]);
+          });
+        }
+      });
+      return const SizedBox.shrink();
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -1576,9 +2106,37 @@ class _AddNotePageState extends State<AddNotePage> {
                           );
 
                           if (confirm == true) {
-                            setState(() {
-                              _voiceNotePath = null;
-                            });
+                            // First close the dialog
+                            if (_voiceNotePath != null) {
+                              try {
+                                final file = File(_voiceNotePath!);
+                                if (await file.exists()) {
+                                  await file.delete();
+                                }
+                              } catch (e) {
+                                debugPrint(
+                                  'Error deleting voice note file: $e',
+                                );
+                              }
+                            }
+
+                            // Update state in the next frame
+                            if (mounted) {
+                              Future.microtask(() {
+                                setState(() {
+                                  _voiceNotePath = null;
+                                  // Create a new list without voice elements
+                                  _elementOrder =
+                                      _elementOrder
+                                          .where(
+                                            (element) =>
+                                                element['type'] != 'voice',
+                                          )
+                                          .toList();
+                                });
+                              });
+                            }
+
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
@@ -2081,20 +2639,18 @@ class _AddNotePageState extends State<AddNotePage> {
         throw Exception('No authenticated user found.');
       }
 
-      final userQuery =
-          await FirebaseFirestore.instance
-              .collection('users')
-              .where('email', isEqualTo: email.toLowerCase())
-              .get();
+      // Normalize emails for comparison
+      final normalizedEmail = email.toLowerCase().trim();
+      final currentUserEmail = currentUser.email?.toLowerCase().trim() ?? '';
 
-      if (userQuery.docs.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Collaborator not found.')),
-        );
-        return;
-      }
+      // Check if user is removing themselves
+      final bool isSelfRemoval = currentUserEmail == normalizedEmail;
 
-      final collaboratorUid = userQuery.docs.first.id;
+      // Print debug info
+      print('Removing email: $normalizedEmail');
+      print('Current user email: $currentUserEmail');
+      print('Is self removal: $isSelfRemoval');
+
       final noteRef = FirebaseFirestore.instance
           .collection('notes')
           .doc(widget.noteId);
@@ -2116,9 +2672,10 @@ class _AddNotePageState extends State<AddNotePage> {
         noteData['collaboratorEmails'] ?? [],
       );
 
-      // Check if the current user is the owner or the collaborator being removed
-      if (owner != currentUser.uid &&
-          email.toLowerCase() != currentUser.email?.toLowerCase()) {
+      print('Current collaborator emails: $currentCollaboratorEmails');
+
+      // If user is not the owner and not removing themselves, deny the operation
+      if (owner != currentUser.uid && !isSelfRemoval) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Only the owner can remove other collaborators.'),
@@ -2127,22 +2684,62 @@ class _AddNotePageState extends State<AddNotePage> {
         return;
       }
 
+      String? collaboratorUid;
+
+      // If removing self, use current user's UID directly
+      if (isSelfRemoval) {
+        collaboratorUid = currentUser.uid;
+        print('Self removal - Using current UID: $collaboratorUid');
+      } else {
+        // For other users, query Firestore
+        final userQuery =
+            await FirebaseFirestore.instance
+                .collection('users')
+                .where('email', isEqualTo: normalizedEmail)
+                .get();
+
+        if (userQuery.docs.isEmpty) {
+          print('User not found in Firestore. Will remove by email only.');
+        } else {
+          collaboratorUid = userQuery.docs.first.id;
+          print('Found collaborator UID: $collaboratorUid');
+        }
+      }
+
       // Update local state immediately
       setState(() {
-        _collaboratorEmails.remove(email.toLowerCase());
+        _collaboratorEmails.removeWhere(
+          (e) => e.toLowerCase().trim() == normalizedEmail,
+        );
       });
 
-      // Remove the collaborator from Firestore data
-      currentCollaborators.remove(collaboratorUid);
-      currentCollaboratorEmails.remove(email.toLowerCase());
+      // Remove from collaborators list if UID was found
+      if (collaboratorUid != null) {
+        currentCollaborators.remove(collaboratorUid);
+      }
 
-      // Update Firestore with the removed collaborator and history
+      // Always remove from email list (case insensitive)
+      currentCollaboratorEmails.removeWhere(
+        (e) => e.toLowerCase().trim() == normalizedEmail,
+      );
+
+      print('Updated collaborator emails: $currentCollaboratorEmails');
+
+      // Create a new array without the removed email for a clean update
+      final cleanedCollaboratorEmails = List<String>.from(
+        currentCollaboratorEmails.where(
+          (e) => e.toLowerCase().trim() != normalizedEmail,
+        ),
+      );
+
+      // Use arrayRemove operation for guaranteed email removal
+      // This is more reliable than setting the array directly
       await noteRef.update({
         'collaborators': currentCollaborators,
-        'collaboratorEmails': currentCollaboratorEmails,
+        'collaboratorEmails': cleanedCollaboratorEmails,
         'collaboratorHistory': FieldValue.arrayUnion([
           {
-            'email': email.toLowerCase(),
+            'email': normalizedEmail,
             'action': 'removed',
             'timestamp': DateTime.now().toIso8601String(),
             'user': currentUser.email ?? 'Unknown',
@@ -2152,15 +2749,93 @@ class _AddNotePageState extends State<AddNotePage> {
         'lastModifiedBy': currentUser.uid,
       });
 
-      // If the current user removed themselves, close the note
-      if (email.toLowerCase() == currentUser.email?.toLowerCase()) {
-        Navigator.pop(context);
+      // Force a second check and update to ensure the email is completely removed
+      await noteRef.update({
+        'collaboratorEmails': FieldValue.arrayRemove([normalizedEmail]),
+      });
+
+      // If the current user removed themselves, completely remove from both local storage and Firestore
+      if (isSelfRemoval) {
+        try {
+          // 1. Remove from local storage
+          final prefs = await SharedPreferences.getInstance();
+          final String? notesString = prefs.getString('notes');
+          if (notesString != null) {
+            List<dynamic> notesList = jsonDecode(notesString);
+
+            // Remove note for this user
+            notesList =
+                notesList.where((note) => note['id'] != widget.noteId).toList();
+
+            // Save back to SharedPreferences
+            await prefs.setString('notes', jsonEncode(notesList));
+            print(
+              'Successfully removed note ${widget.noteId} from local storage',
+            );
+          }
+
+          // 2. Extra: Update the user's personal record in Firestore if such data exists
+          try {
+            final userDoc = FirebaseFirestore.instance
+                .collection('users')
+                .doc(currentUser.uid);
+
+            // Remove this note from the user's collaborations list if it exists
+            await userDoc.update({
+              'collaboratedNotes': FieldValue.arrayRemove([widget.noteId]),
+              'sharedNotes': FieldValue.arrayRemove([widget.noteId]),
+            });
+            print('Successfully removed note reference from user document');
+          } catch (e) {
+            // This is optional, so we'll just log and continue if it fails
+            print('Optional user document update error (non-critical): $e');
+          }
+
+          // 3. One final verification to ensure all traces of this user are removed
+          final verifySnapshot = await noteRef.get();
+          if (verifySnapshot.exists) {
+            final updatedNoteData = verifySnapshot.data()!;
+            final collaboratorEmails = List<String>.from(
+              updatedNoteData['collaboratorEmails'] ?? [],
+            );
+
+            if (collaboratorEmails.any(
+              (e) => e.toLowerCase().trim() == currentUserEmail,
+            )) {
+              print(
+                'Final cleanup: Email still found in collaboratorEmails, forcing direct array removal',
+              );
+
+              // Create a clean list without the current user's email
+              final finalCleanedList =
+                  collaboratorEmails
+                      .where((e) => e.toLowerCase().trim() != currentUserEmail)
+                      .toList();
+
+              // Set the array directly to ensure the email is removed
+              await noteRef.update({'collaboratorEmails': finalCleanedList});
+            }
+          }
+        } catch (e) {
+          print('Error completely removing collaboration: $e');
+        }
+
+        // Return to previous screen with result to indicate left collaboration
+        Navigator.pop(context, {
+          'id': widget.noteId,
+          'isNew': false,
+          'delete': false,
+          'updated': true,
+          'leftCollaboration': true, // Flag to refresh notes list
+        });
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Removed collaborator: $email',
+            isSelfRemoval
+                ? 'You left the collaboration'
+                : 'Removed collaborator: $email',
             style: TextStyle(color: Theme.of(context).colorScheme.onError),
           ),
           backgroundColor: Theme.of(context).colorScheme.error,
@@ -2193,12 +2868,22 @@ class _AddNotePageState extends State<AddNotePage> {
   }
 
   void _confirmRemoveCollaborator(String email) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final isRemovingSelf =
+        currentUser?.email?.toLowerCase().trim() == email.toLowerCase().trim();
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Remove Collaborator'), // default size
-          content: Text('Are you sure you want to remove $email?'),
+          title: Text(
+            isRemovingSelf ? 'Leave Collaboration' : 'Remove Collaborator',
+          ),
+          content: Text(
+            isRemovingSelf
+                ? 'Are you sure you want to leave this collaboration?'
+                : 'Are you sure you want to remove $email?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -2210,7 +2895,7 @@ class _AddNotePageState extends State<AddNotePage> {
                 Navigator.pop(context);
                 await _removeCollaboratorByEmail(email);
               },
-              child: const Text('Remove'),
+              child: Text(isRemovingSelf ? 'Leave' : 'Remove'),
             ),
           ],
         );
@@ -2219,6 +2904,19 @@ class _AddNotePageState extends State<AddNotePage> {
   }
 
   void _openCollaboratorOptions() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final isCollaborator =
+        currentUser != null &&
+        _collaboratorEmails.any(
+          (email) =>
+              email.toLowerCase().trim() ==
+              currentUser.email?.toLowerCase().trim(),
+        );
+    final isOwner =
+        widget.noteId != null &&
+        FirebaseAuth.instance.currentUser?.uid ==
+            widget.onSave.toString().split('owner:')[1].split(',')[0].trim();
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -2234,10 +2932,7 @@ class _AddNotePageState extends State<AddNotePage> {
                 leading: const Icon(Icons.person_add),
                 title: Text(
                   'Add Collaborator',
-                  style:
-                      Theme.of(
-                        context,
-                      ).textTheme.bodyMedium, // default text size
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 onTap: () {
                   Navigator.pop(context);
@@ -2248,16 +2943,30 @@ class _AddNotePageState extends State<AddNotePage> {
                 leading: const Icon(Icons.people),
                 title: Text(
                   'View Collaborators',
-                  style:
-                      Theme.of(
-                        context,
-                      ).textTheme.bodyMedium, // default text size
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 onTap: () {
                   Navigator.pop(context);
                   _viewCollaborators();
                 },
               ),
+              // Add a direct option for collaborators to leave
+              if (isCollaborator && !isOwner)
+                ListTile(
+                  leading: const Icon(Icons.exit_to_app, color: Colors.red),
+                  title: Text(
+                    'Leave Collaboration',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: Colors.red),
+                  ),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    if (currentUser.email != null) {
+                      _confirmRemoveCollaborator(currentUser.email!);
+                    }
+                  },
+                ),
             ],
           ),
         );
@@ -2275,26 +2984,25 @@ class _AddNotePageState extends State<AddNotePage> {
           title: Text(
             'Collaborate with others',
             style:
-                Theme.of(context).textTheme.titleMedium, // ✅ default size title
+                Theme.of(context).textTheme.titleMedium, // default size title
           ),
           content: TextField(
             controller: emailController,
             decoration: InputDecoration(
               labelText: 'Collaborator Email',
               hintText: 'Enter collaborator email',
-              labelStyle: Theme.of(context).textTheme.bodyMedium, // ✅ default
-              hintStyle: Theme.of(context).textTheme.bodyMedium, // ✅ default
+              labelStyle: Theme.of(context).textTheme.bodyMedium, // default
+              hintStyle: Theme.of(context).textTheme.bodyMedium, // default
             ),
             keyboardType: TextInputType.emailAddress,
-            style: Theme.of(context).textTheme.bodyMedium, // ✅ typing default
+            style: Theme.of(context).textTheme.bodyMedium, // typing default
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: Text(
                 'Cancel',
-                style:
-                    Theme.of(context).textTheme.bodyMedium, // ✅ button default
+                style: Theme.of(context).textTheme.bodyMedium, // button default
               ),
             ),
             ElevatedButton(
@@ -2311,6 +3019,9 @@ class _AddNotePageState extends State<AddNotePage> {
   }
 
   void _viewCollaborators() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final currentUserEmail = currentUser?.email?.toLowerCase() ?? '';
+
     showDialog(
       context: context,
       builder: (context) {
@@ -2330,9 +3041,12 @@ class _AddNotePageState extends State<AddNotePage> {
                     itemCount: _collaboratorEmails.length,
                     itemBuilder: (context, index) {
                       final email = _collaboratorEmails[index];
+                      final isCurrentUser =
+                          email.toLowerCase().trim() == currentUserEmail.trim();
+
                       return ListTile(
                         title: Text(
-                          email,
+                          email + (isCurrentUser ? ' (You)' : ''),
                           style: const TextStyle(fontSize: 14),
                         ),
                         trailing: IconButton(
@@ -2340,6 +3054,10 @@ class _AddNotePageState extends State<AddNotePage> {
                             Icons.remove_circle,
                             color: Colors.red,
                           ),
+                          tooltip:
+                              isCurrentUser
+                                  ? 'Leave collaboration'
+                                  : 'Remove collaborator',
                           onPressed: () {
                             Navigator.pop(context);
                             _confirmRemoveCollaborator(email);
@@ -3116,23 +3834,28 @@ class _AddNotePageState extends State<AddNotePage> {
     return {
       'title': _titleController.text.trim(),
       'content': _contentController.text.trim(),
-      'imagePaths': List<String>.from(_imagePaths),
-      'voiceNotePath': _voiceNotePath,
-      'checklistItems':
-          _checklistItems
-              .map((item) => Map<String, dynamic>.from(item))
-              .toList(),
       'isPinned': _isPinned,
       'reminder': _reminder?.toIso8601String(),
       'labels': List<String>.from(_labels),
       'isArchived': _isArchived,
       'fontFamily': _selectedFontFamily,
       'folderId': _selectedFolderId,
-      'folderColor':
-          _selectedFolderId != null
-              ? _folderColorMap[_selectedFolderId]?.value
-              : null,
       'collaboratorEmails': List<String>.from(_collaboratorEmails),
+      // Only include media paths if they exist
+      if (_imagePaths.isNotEmpty) 'imagePaths': List<String>.from(_imagePaths),
+      if (_voiceNotePath != null) 'voiceNotePath': _voiceNotePath,
+      if (_checklistItems.isNotEmpty)
+        'checklistItems':
+            _checklistItems
+                .where(
+                  (item) =>
+                      (item['text'] as String?)?.trim().isNotEmpty ?? false,
+                )
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList(),
+      if (_selectedFolderId != null &&
+          _folderColorMap[_selectedFolderId] != null)
+        'folderColor': _folderColorMap[_selectedFolderId]?.value,
     };
   }
 
@@ -3224,8 +3947,8 @@ class _AddNotePageState extends State<AddNotePage> {
           foregroundColor: Colors.white,
           title: const Text(
             'Add Note',
-            overflow: TextOverflow.ellipsis, // 🔥 important
-            maxLines: 1, // 🔥 important
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
           ),
           actions: [
             IconButton(
@@ -3792,259 +4515,262 @@ class _AddNotePageState extends State<AddNotePage> {
                 const SizedBox(height: 16),
                 // Render elements in order (newest first)
                 ..._elementOrder.map((element) {
-                  switch (element['type']) {
-                    case 'image':
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8.0),
-                        child: Stack(
-                          children: [
-                            GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder:
-                                        (_) => FullScreenGallery(
-                                          imagePaths: _imagePaths,
-                                          initialIndex: _imagePaths.indexOf(
-                                            element['path'],
-                                          ),
-                                        ),
-                                  ),
-                                );
-                              },
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Image.file(
-                                  File(element['path']),
-                                  width: double.infinity,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              top: 8,
-                              right: 8,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.5),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: IconButton(
-                                  icon: const Icon(
-                                    Icons.close,
-                                    size: 20,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: () async {
-                                    final confirm = await showDialog<bool>(
-                                      context: context,
+                  final type = element['type'] as String?;
+                  if (type == 'image') {
+                    final path = element['path'];
+                    if (path != null && path is String && path.isNotEmpty) {
+                      final fileExists = File(path).existsSync();
+                      debugPrint('Image path: $path | Exists: $fileExists');
+                      if (fileExists) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: Stack(
+                            children: [
+                              GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
                                       builder:
-                                          (context) => AlertDialog(
-                                            title: const Text(
-                                              'Remove Image',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            content: const Text(
-                                              'Are you sure you want to remove this image?',
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                child: const Text('Cancel'),
-                                                onPressed:
-                                                    () => Navigator.of(
-                                                      context,
-                                                    ).pop(false),
-                                              ),
-                                              ElevatedButton(
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: Colors.red,
-                                                ),
-                                                child: const Text('Remove'),
-                                                onPressed:
-                                                    () => Navigator.of(
-                                                      context,
-                                                    ).pop(true),
-                                              ),
-                                            ],
-                                          ),
-                                    );
-
-                                    if (confirm == true) {
-                                      setState(() {
-                                        _imagePaths.remove(element['path']);
-                                        _elementOrder.remove(element);
-                                      });
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Image removed.',
-                                            style: TextStyle(
-                                              color:
-                                                  Theme.of(
-                                                    context,
-                                                  ).colorScheme.onError,
+                                          (_) => FullScreenGallery(
+                                            imagePaths: _imagePaths,
+                                            initialIndex: _imagePaths.indexOf(
+                                              path,
                                             ),
                                           ),
-                                          backgroundColor:
-                                              Theme.of(
-                                                context,
-                                              ).colorScheme.error,
-                                          behavior: SnackBarBehavior.floating,
-                                          margin: const EdgeInsets.all(8),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  },
+                                    ),
+                                  );
+                                },
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Image.file(
+                                    File(path),
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    case 'voice':
-                      return _buildVoiceNotePlayer();
-                    case 'checklist':
-                      final index = element['index'];
-                      if (index < _checklistItems.length) {
-                        _checklistControllers.putIfAbsent(index, () {
-                          final controller = TextEditingController(
-                            text: _checklistItems[index]['text'],
-                          );
-                          return controller;
-                        });
-
-                        return ListTile(
-                          leading: Checkbox(
-                            value: _checklistItems[index]['checked'],
-                            onChanged: (bool? value) {
-                              setState(() {
-                                _checklistItems[index]['checked'] = value!;
-                              });
-                            },
-                          ),
-                          title: TextField(
-                            controller: _checklistControllers[index],
-                            onChanged: (text) {
-                              setState(() {
-                                _checklistItems[index]['text'] = text;
-                                if (text.trim().isEmpty &&
-                                    _checklistControllers[index]?.text != '') {
-                                  _elementOrder.remove(element);
-                                }
-                              });
-                            },
-                            decoration: const InputDecoration(
-                              hintText: 'Input List Item',
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.symmetric(
-                                vertical: 5.0,
-                              ),
-                            ),
-                            style: TextStyle(
-                              fontSize: 16.0, // Fixed font size
-                              fontWeight:
-                                  FontWeight.normal, // Always normal weight
-                              fontStyle:
-                                  FontStyle.normal, // Always normal style
-                              decoration:
-                                  _checklistItems[index]['checked']
-                                      ? TextDecoration.lineThrough
-                                      : null, // Only strikethrough when checked
-                              fontFamily: 'Roboto', // Fixed font family
-                            ),
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () async {
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder:
-                                    (context) => AlertDialog(
-                                      title: const Text(
-                                        'Remove Checklist Item',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      content: const Text(
-                                        'Are you sure you want to remove this item?',
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed:
-                                              () =>
-                                                  Navigator.pop(context, false),
-                                          child: const Text('Cancel'),
-                                        ),
-                                        ElevatedButton(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.red,
-                                          ),
-                                          onPressed:
-                                              () =>
-                                                  Navigator.pop(context, true),
-                                          child: const Text('Remove'),
-                                        ),
-                                      ],
-                                    ),
-                              );
-
-                              if (confirm == true) {
-                                setState(() {
-                                  _checklistItems.removeAt(index);
-                                  _elementOrder.remove(element);
-                                  for (
-                                    var i = 0;
-                                    i < _elementOrder.length;
-                                    i++
-                                  ) {
-                                    if (_elementOrder[i]['type'] ==
-                                            'checklist' &&
-                                        _elementOrder[i]['index'] > index) {
-                                      _elementOrder[i]['index']--;
-                                    }
-                                  }
-                                });
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Checklist item removed.',
-                                      style: TextStyle(
-                                        color:
-                                            Theme.of(
-                                              context,
-                                            ).colorScheme.onError,
-                                      ),
-                                    ),
-                                    backgroundColor:
-                                        Theme.of(context).colorScheme.error,
-                                    behavior: SnackBarBehavior.floating,
-                                    margin: const EdgeInsets.all(8),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.5),
+                                    shape: BoxShape.circle,
                                   ),
-                                );
-                                await _saveNoteToFirestore();
-                              }
-                            },
+                                  child: IconButton(
+                                    icon: const Icon(
+                                      Icons.close,
+                                      size: 20,
+                                      color: Colors.white,
+                                    ),
+                                    onPressed: () async {
+                                      final confirm = await showDialog<bool>(
+                                        context: context,
+                                        builder:
+                                            (context) => AlertDialog(
+                                              title: const Text(
+                                                'Remove Image',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              content: const Text(
+                                                'Are you sure you want to remove this image?',
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  child: const Text('Cancel'),
+                                                  onPressed:
+                                                      () => Navigator.of(
+                                                        context,
+                                                      ).pop(false),
+                                                ),
+                                                ElevatedButton(
+                                                  style:
+                                                      ElevatedButton.styleFrom(
+                                                        backgroundColor:
+                                                            Colors.red,
+                                                      ),
+                                                  child: const Text('Remove'),
+                                                  onPressed:
+                                                      () => Navigator.of(
+                                                        context,
+                                                      ).pop(true),
+                                                ),
+                                              ],
+                                            ),
+                                      );
+
+                                      if (confirm == true) {
+                                        setState(() {
+                                          _imagePaths.remove(path);
+                                          _elementOrder.remove(element);
+                                        });
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Image removed.',
+                                              style: TextStyle(
+                                                color:
+                                                    Theme.of(
+                                                      context,
+                                                    ).colorScheme.onError,
+                                              ),
+                                            ),
+                                            backgroundColor:
+                                                Theme.of(
+                                                  context,
+                                                ).colorScheme.error,
+                                            behavior: SnackBarBehavior.floating,
+                                            margin: const EdgeInsets.all(8),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         );
+                      } else {
+                        debugPrint('Image file does not exist: $path');
+                        return const SizedBox.shrink();
                       }
+                    } else {
+                      debugPrint('Image path is null or empty');
                       return const SizedBox.shrink();
-                    default:
+                    }
+                  } else if (type == 'voice') {
+                    return _buildVoiceNotePlayer();
+                  } else if (type == 'checklist') {
+                    final index = element['index'];
+                    if (index != null &&
+                        index is int &&
+                        index < _checklistItems.length) {
+                      _checklistControllers.putIfAbsent(index, () {
+                        final controller = TextEditingController(
+                          text: _checklistItems[index]['text'],
+                        );
+                        return controller;
+                      });
+
+                      return ListTile(
+                        leading: Checkbox(
+                          value: _checklistItems[index]['checked'],
+                          onChanged: (bool? value) {
+                            setState(() {
+                              _checklistItems[index]['checked'] = value!;
+                            });
+                          },
+                        ),
+                        title: TextField(
+                          controller: _checklistControllers[index],
+                          onChanged: (text) {
+                            setState(() {
+                              _checklistItems[index]['text'] = text;
+                              if (text.trim().isEmpty &&
+                                  _checklistControllers[index]?.text != '') {
+                                _elementOrder.remove(element);
+                              }
+                            });
+                          },
+                          decoration: const InputDecoration(
+                            hintText: 'Input List Item',
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 5.0),
+                          ),
+                          style: TextStyle(
+                            fontSize: 16.0,
+                            fontWeight: FontWeight.normal,
+                            fontStyle: FontStyle.normal,
+                            decoration:
+                                _checklistItems[index]['checked']
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                            fontFamily: 'Roboto',
+                          ),
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder:
+                                  (context) => AlertDialog(
+                                    title: const Text(
+                                      'Remove Checklist Item',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    content: const Text(
+                                      'Are you sure you want to remove this item?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed:
+                                            () => Navigator.pop(context, false),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                        ),
+                                        onPressed:
+                                            () => Navigator.pop(context, true),
+                                        child: const Text('Remove'),
+                                      ),
+                                    ],
+                                  ),
+                            );
+
+                            if (confirm == true) {
+                              setState(() {
+                                _checklistItems.removeAt(index);
+                                _elementOrder.remove(element);
+                                for (var i = 0; i < _elementOrder.length; i++) {
+                                  if (_elementOrder[i]['type'] == 'checklist' &&
+                                      _elementOrder[i]['index'] > index) {
+                                    _elementOrder[i]['index']--;
+                                  }
+                                }
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Checklist item removed.',
+                                    style: TextStyle(
+                                      color:
+                                          Theme.of(context).colorScheme.onError,
+                                    ),
+                                  ),
+                                  backgroundColor:
+                                      Theme.of(context).colorScheme.error,
+                                  behavior: SnackBarBehavior.floating,
+                                  margin: const EdgeInsets.all(8),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              );
+                              await _saveNoteToFirestore();
+                            }
+                          },
+                        ),
+                      );
+                    } else {
                       return const SizedBox.shrink();
+                    }
                   }
+                  return const SizedBox.shrink();
                 }),
               ],
             ),

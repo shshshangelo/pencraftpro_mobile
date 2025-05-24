@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -110,7 +112,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                     ),
                     style: const TextStyle(fontSize: 14),
                     onFieldSubmitted: (_) {
-                      _sendResetEmail(); // kapag nag tap or enter, automatic send reset
+                      _sendResetEmail();
                     },
                     validator: (value) {
                       if (value == null || value.isEmpty) {
